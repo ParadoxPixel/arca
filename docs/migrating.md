@@ -4,7 +4,7 @@ layout: default
 nav_order: 6
 ---
 
-![Arca](docs/assets/img/nexusimport.png)
+![Arca]({{ site.baseurl }}/assets/img/nexusimport.png)
 
 
 # Migrating from Nexus
