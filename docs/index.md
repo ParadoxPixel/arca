@@ -16,8 +16,9 @@ before the first start.
 ## What it does
 
 - **Three formats.** Maven 2, npm and Eclipse p2, chosen per repository and fixed once it exists.
-- **Hosted and proxy repositories.** Publish to a hosted repository, or mirror Maven Central,
-  registry.npmjs.org and download.eclipse.org through a proxy that caches what it serves.
+- **Hosted, proxy and group repositories.** Publish to a hosted repository, mirror Maven Central,
+  registry.npmjs.org and download.eclipse.org through a proxy that caches what it serves, or put a
+  p2 group over several update sites so a target platform needs one location instead of a dozen.
 - **Version policies.** A repository takes releases only, prereleases only, or both.
 - **Per user permissions.** Public repositories are readable without an account. Private ones are
   granted per user, per repository.

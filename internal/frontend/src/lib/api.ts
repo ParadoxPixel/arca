@@ -54,7 +54,7 @@ export type Role = 'admin' | 'user'
 export type Permission = 'read' | 'write' | 'admin'
 export type Policy = 'release' | 'snapshot' | 'mixed'
 export type Visibility = 'public' | 'private'
-export type RepositoryType = 'hosted' | 'proxy'
+export type RepositoryType = 'hosted' | 'proxy' | 'group'
 export type RepositoryFormat = 'maven2' | 'npm' | 'p2'
 
 export interface User {
@@ -116,6 +116,7 @@ export interface Repository {
 
 export interface RepositoryDetail extends Repository {
   stats: { components: number; assets: number; bytes: number; updatedAt: number }
+  members?: string[]
 }
 
 export interface BrowseEntry {

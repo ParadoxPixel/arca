@@ -92,6 +92,7 @@ func (s *Store) migrate() error {
 		&models.Category{},
 		&models.Repository{},
 		&models.Grant{},
+		&models.RepositoryMember{},
 		&models.Component{},
 		&models.DistTag{},
 		&models.Asset{},

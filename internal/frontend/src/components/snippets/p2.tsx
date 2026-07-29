@@ -7,8 +7,10 @@ const hostedExample = 'commons/25.2.5'
 export function P2Usage({ repository }: { repository: RepositoryDetail }) {
   const base = `${window.location.origin}/repository/${repository.name}`
   const isProxy = repository.type === 'proxy'
+  const isGroup = repository.type === 'group'
   const isPrivate = repository.visibility === 'private'
-  const site = `${base}/${isProxy ? proxyExample : hostedExample}`
+  // A group is itself the update site: its composite names the members.
+  const site = isGroup ? base : `${base}/${isProxy ? proxyExample : hostedExample}`
 
   const target = `<location includeMode="slicer" type="InstallableUnit">
   <repository location="${site}"/>
@@ -54,9 +56,11 @@ export function P2Usage({ repository }: { repository: RepositoryDetail }) {
       <div className="space-y-1">
         <p className="text-xs font-medium text-muted-foreground">Update site</p>
         <p className="max-w-2xl text-sm text-muted-foreground">
-          {isProxy
-            ? 'This proxy mirrors the whole upstream host, so append the path of the site you want. In Eclipse, paste the URL into Help, Install New Software.'
-            : 'Each published site lives under its own path. Paste the URL into Help, Install New Software, or point a target definition at it.'}
+          {isGroup
+            ? 'This group is a composite update site. Point Eclipse at it once and it resolves every member listed below, so a target platform needs one location instead of many.'
+            : isProxy
+              ? 'This proxy mirrors the whole upstream host, so append the path of the site you want. In Eclipse, paste the URL into Help, Install New Software.'
+              : 'Each published site lives under its own path. Paste the URL into Help, Install New Software, or point a target definition at it.'}
           {isPrivate ? ' This repository is private, so Eclipse prompts for your email and an API token.' : ' Reading needs no credentials.'}
         </p>
       </div>
@@ -78,7 +82,17 @@ export function P2Usage({ repository }: { repository: RepositoryDetail }) {
       </div>
       <CodeBlock language="pom.xml" code={tycho} />
 
-      {isProxy ? null : (
+      {isGroup ? (
+        <div className="space-y-1">
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            Members are read directly from their own URLs, so each one still enforces its own
+            permissions. A member you cannot read is left out of the composite rather than failing
+            the whole site.
+          </p>
+        </div>
+      ) : null}
+
+      {isProxy || isGroup ? null : (
         <>
           <div className="space-y-1">
             <p className="text-xs font-medium text-muted-foreground">Publishing</p>

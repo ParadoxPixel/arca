@@ -25,6 +25,12 @@ func (s *Server) serveP2(writer http.ResponseWriter, request *http.Request, repo
 		plain(writer, http.StatusMethodNotAllowed, "Proxy repositories are read-only")
 		return
 	}
+	// A group stores nothing, so an accepted upload would sit in a repository
+	// whose reads only ever answer with generated composite documents.
+	if repository.IsGroup() && required != models.PermissionRead {
+		plain(writer, http.StatusMethodNotAllowed, "Group repositories are read-only")
+		return
+	}
 
 	switch request.Method {
 	case http.MethodGet, http.MethodHead:
@@ -39,6 +45,11 @@ func (s *Server) serveP2(writer http.ResponseWriter, request *http.Request, repo
 }
 
 func (s *Server) serveP2Read(writer http.ResponseWriter, request *http.Request, repository *models.Repository, path string) {
+	if repository.IsGroup() {
+		s.serveP2Group(writer, request, repository, path)
+		return
+	}
+
 	if path == "" || strings.HasSuffix(path, "/") {
 		exists, err := s.store.DirectoryExists(repository.ID, path)
 		if err != nil {

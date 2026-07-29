@@ -11,7 +11,7 @@ Artifacts live on disk, metadata lives in SQLite, and the React UI is embedded i
 is no separate database to run and no config file to write before the first start.
 
 - Maven 2 and npm repositories, hosted or proxying a remote
-- Eclipse p2 update sites, hosted or proxied and cached, for PDE and Tycho
+- Eclipse p2 update sites, hosted or proxied and cached, with composite groups for PDE and Tycho
 - Release, prerelease and mixed version policies
 - Public repositories readable without an account, private ones granted per user
 - Generated `maven-metadata.xml` and npm packuments, built from the database
