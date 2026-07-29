@@ -58,6 +58,11 @@ func (s *Server) routes() {
 	api.Handle("/admin/settings", handler(s.routeSettings)).Methods(http.MethodGet)
 	api.Handle("/admin/settings", handler(s.routeUpdateSettings)).Methods(http.MethodPatch)
 
+	api.Handle("/admin/migration", handler(s.routeMigrationStatus)).Methods(http.MethodGet)
+	api.Handle("/admin/migration", handler(s.routeStartMigration)).Methods(http.MethodPost)
+	api.Handle("/admin/migration", handler(s.routeCancelMigration)).Methods(http.MethodDelete)
+	api.Handle("/admin/migration/preview", handler(s.routeMigrationPreview)).Methods(http.MethodPost)
+
 	api.PathPrefix("/").HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "Not found"})
 	})

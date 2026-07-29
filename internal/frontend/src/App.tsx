@@ -6,6 +6,7 @@ import { AccountRoute } from '@/routes/account'
 import { AdminArtifactsRoute } from '@/routes/admin-artifacts'
 import { AdminCategoriesRoute } from '@/routes/admin-categories'
 import { AdminHealthRoute } from '@/routes/admin-health'
+import { AdminMaintenanceRoute } from '@/routes/admin-maintenance'
 import { AdminRepositoriesRoute } from '@/routes/admin-repositories'
 import { AdminSettingsRoute } from '@/routes/admin-settings'
 import { AdminStorageRoute } from '@/routes/admin-storage'
@@ -45,6 +46,7 @@ function Router() {
         <Route path="admin/categories" element={<AdminCategoriesRoute />} />
         <Route path="admin/users" element={<AdminUsersRoute />} />
         <Route path="admin/settings" element={<AdminSettingsRoute />} />
+        <Route path="admin/maintenance" element={<AdminMaintenanceRoute />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
