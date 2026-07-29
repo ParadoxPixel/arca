@@ -10,7 +10,7 @@ import { WelcomeHero } from '@/components/welcome-hero'
 import { api, type Repository } from '@/lib/api'
 import { categoriesQuery, groupRepositories, needsHeadings } from '@/lib/categories'
 import { useSession } from '@/lib/session'
-import { formatRelative, plural } from '@/lib/utils'
+import { cn, formatRelative, plural } from '@/lib/utils'
 
 function RepositoryTable({ repositories }: { repositories: Repository[] }) {
   return (
@@ -32,7 +32,7 @@ function RepositoryTable({ repositories }: { repositories: Repository[] }) {
               <TableCell className="py-3">
                 <Link
                   to={`/repositories/${repository.name}`}
-                  className="font-mono text-sm font-medium text-foreground hover:text-primary"
+                  className="whitespace-nowrap font-mono text-sm font-medium text-foreground hover:text-primary"
                 >
                   {repository.name}
                 </Link>
@@ -111,9 +111,15 @@ function RepositoryIndex() {
       ) : (
         <div className="space-y-8">
           {groups.map((group) => (
-            <section key={group.id ?? 'uncategorized'} className="space-y-3">
+            <section
+              key={group.id ?? 'uncategorized'}
+              className={cn(
+                'space-y-3',
+                headings && 'lg:grid lg:grid-cols-[10rem_minmax(0,1fr)] lg:gap-6 lg:space-y-0',
+              )}
+            >
               {headings ? (
-                <div className="space-y-0.5">
+                <div className="space-y-0.5 lg:sticky lg:top-20 lg:self-start lg:pt-2.5">
                   <h2 className="text-sm font-semibold">{group.name}</h2>
                   {group.description ? (
                     <p className="text-xs text-muted-foreground">{group.description}</p>

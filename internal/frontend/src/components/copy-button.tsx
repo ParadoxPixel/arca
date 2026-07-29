@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import type { RepositoryFormat } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, copyText } from '@/lib/utils'
 
 function useCopied(): [boolean, (value: string) => void] {
   const [copied, setCopied] = useState(false)
@@ -12,10 +12,7 @@ function useCopied(): [boolean, (value: string) => void] {
     return () => window.clearTimeout(timer)
   }, [copied])
 
-  return [
-    copied,
-    (value: string) => void navigator.clipboard.writeText(value).then(() => setCopied(true)),
-  ]
+  return [copied, (value: string) => void copyText(value).then(setCopied)]
 }
 
 export function CopyButton({ value, className }: { value: string; className?: string }) {

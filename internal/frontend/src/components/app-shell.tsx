@@ -1,5 +1,7 @@
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -47,6 +49,10 @@ const managePages = [
   { to: '/admin/maintenance', label: 'Maintenance', icon: Wrench },
 ]
 
+// The mobile sheet closes when a rail link is followed, but only then. Closing
+// on any click inside the rail would swallow the Manage fold toggle.
+const RailNavigate = createContext<() => void>(() => {})
+
 function RailSection({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="space-y-1 px-3 py-3">
@@ -57,10 +63,13 @@ function RailSection({ label, children }: { label: string; children: ReactNode }
 }
 
 function RailLink({ to, end, children }: { to: string; end?: boolean; children: ReactNode }) {
+  const navigated = useContext(RailNavigate)
+
   return (
     <NavLink
       to={to}
       end={end}
+      onClick={navigated}
       className={({ isActive }) =>
         cn(
           'flex items-center gap-2 rounded-xl px-3 py-2 text-[13px] transition-colors',
@@ -104,7 +113,7 @@ function ManageSection() {
   )
 }
 
-function RailContent({ onNavigate }: { onNavigate?: () => void }) {
+function RailContent({ onNavigate = () => {} }: { onNavigate?: () => void }) {
   const { instanceName, user } = useSession()
   const { data } = useQuery({
     queryKey: ['repositories'],
@@ -117,71 +126,74 @@ function RailContent({ onNavigate }: { onNavigate?: () => void }) {
   const headings = needsHeadings(groups)
 
   return (
-    <div className="flex h-full flex-col" onClick={onNavigate}>
-      <Link
-        to="/"
-        className="mx-3 mt-4 flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors hover:bg-accent/70"
-      >
-        <Logo className="size-5" />
-        <span className="truncate font-semibold tracking-tight">{instanceName}</span>
-      </Link>
+    <RailNavigate.Provider value={onNavigate}>
+      <div className="flex h-full flex-col">
+        <Link
+          to="/"
+          onClick={onNavigate}
+          className="mx-3 mt-4 flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors hover:bg-accent/70"
+        >
+          <Logo className="size-5" />
+          <span className="truncate font-semibold tracking-tight">{instanceName}</span>
+        </Link>
 
-      <div className="flex-1 overflow-y-auto scrollbar-thin pb-4">
-        <RailSection label="Browse">
-          <RailLink to="/" end>
-            <Library className="size-3.5 shrink-0 text-faint" />
-            <span className="flex-1 truncate">All repositories</span>
-          </RailLink>
-          <RailLink to="/search">
-            <Search className="size-3.5 shrink-0 text-faint" />
-            <span className="flex-1 truncate">Search artifacts</span>
-          </RailLink>
-        </RailSection>
-
-        {groups.map((group) => (
-          <RailSection
-            key={group.id ?? 'uncategorized'}
-            label={headings ? group.name : 'Repositories'}
-          >
-            {group.repositories.map((repository) => (
-              <RailLink key={repository.id} to={`/repositories/${repository.name}`}>
-                <span className="flex-1 truncate font-mono text-[13px]">{repository.name}</span>
-                {repository.visibility === 'public' ? (
-                  <Globe className="size-3.5 shrink-0 text-faint" aria-label="Public" />
-                ) : (
-                  <Lock className="size-3.5 shrink-0 text-faint" aria-label="Private" />
-                )}
-              </RailLink>
-            ))}
-          </RailSection>
-        ))}
-        {data && repositories.length === 0 ? (
-          <RailSection label="Repositories">
-            <p className="px-3 py-2 text-[13px] text-faint">None visible to you</p>
-          </RailSection>
-        ) : null}
-
-        {user?.role === 'admin' ? <ManageSection /> : null}
-
-        {user ? (
-          <RailSection label="You">
-            <RailLink to="/account">
-              <KeyRound className="size-3.5 shrink-0 text-faint" />
-              <span className="flex-1 truncate">Account and tokens</span>
+        <div className="flex-1 overflow-y-auto scrollbar-thin pb-4">
+          <RailSection label="Browse">
+            <RailLink to="/" end>
+              <Library className="size-3.5 shrink-0 text-faint" />
+              <span className="flex-1 truncate">All repositories</span>
+            </RailLink>
+            <RailLink to="/search">
+              <Search className="size-3.5 shrink-0 text-faint" />
+              <span className="flex-1 truncate">Search artifacts</span>
             </RailLink>
           </RailSection>
-        ) : null}
-      </div>
 
-      <div className="mx-3 rounded-2xl bg-tint px-4 py-3.5 text-tint-foreground">
-        <p className="text-xs font-medium opacity-80">Repository endpoint</p>
-        <p className="mt-1 break-all font-mono text-[11px] opacity-70">
-          {window.location.origin}/repository/
-        </p>
-      </div>
+          {groups.map((group) => (
+            <RailSection
+              key={group.id ?? 'uncategorized'}
+              label={headings ? group.name : 'Repositories'}
+            >
+              {group.repositories.map((repository) => (
+                <RailLink key={repository.id} to={`/repositories/${repository.name}`}>
+                  <span className="flex-1 truncate font-mono text-[13px]">{repository.name}</span>
+                  {repository.visibility === 'public' ? (
+                    <Globe className="size-3.5 shrink-0 text-faint" aria-label="Public" />
+                  ) : (
+                    <Lock className="size-3.5 shrink-0 text-faint" aria-label="Private" />
+                  )}
+                </RailLink>
+              ))}
+            </RailSection>
+          ))}
+          {data && repositories.length === 0 ? (
+            <RailSection label="Repositories">
+              <p className="px-3 py-2 text-[13px] text-faint">None visible to you</p>
+            </RailSection>
+          ) : null}
 
-      <BuildStamp />
-    </div>
+          {user?.role === 'admin' ? <ManageSection /> : null}
+
+          {user ? (
+            <RailSection label="You">
+              <RailLink to="/account">
+                <KeyRound className="size-3.5 shrink-0 text-faint" />
+                <span className="flex-1 truncate">Account and tokens</span>
+              </RailLink>
+            </RailSection>
+          ) : null}
+        </div>
+
+        <div className="mx-3 rounded-2xl bg-tint px-4 py-3.5 text-tint-foreground">
+          <p className="text-xs font-medium opacity-80">Repository endpoint</p>
+          <p className="mt-1 break-all font-mono text-[11px] opacity-70">
+            {window.location.origin}/repository/
+          </p>
+        </div>
+
+        <BuildStamp />
+      </div>
+    </RailNavigate.Provider>
   )
 }
 
