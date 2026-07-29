@@ -10,6 +10,7 @@ const (
 
 	TypeHosted = "hosted"
 	TypeProxy  = "proxy"
+	TypeGroup  = "group"
 
 	DefaultMetadataTTLSeconds = 1800
 	DefaultNegativeTTLSeconds = 1800
@@ -43,6 +44,8 @@ type Repository struct {
 func (Repository) TableName() string { return "repositories" }
 
 func (r Repository) IsProxy() bool { return r.Type == TypeProxy }
+
+func (r Repository) IsGroup() bool { return r.Type == TypeGroup }
 
 func (r Repository) AcceptsPolicy(isSnapshot bool) bool {
 	switch r.Policy {

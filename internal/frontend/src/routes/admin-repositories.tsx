@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Settings2, Trash2, Users } from 'lucide-react'
+import { ArrowDown, ArrowUp, Plus, Settings2, Trash2, Users } from 'lucide-react'
 import { Badge, FormatBadge, PolicyBadge, TypeBadge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -31,6 +31,7 @@ import {
   type Permission,
   type Policy,
   type Repository,
+  type RepositoryDetail,
   type RepositoryFormat,
   type RepositoryType,
   type Visibility,
@@ -96,6 +97,92 @@ async function resolveCategoryID(value: string, draftName: string): Promise<stri
   return created.id
 }
 
+// MemberField edits the ordered children of a group. A member is a p2
+// repository, optionally narrowed to a path inside it, because an update site
+// is usually one directory of a repository rather than the whole of one.
+function MemberField({
+  members,
+  onChange,
+  candidates,
+}: {
+  members: string[]
+  onChange: (members: string[]) => void
+  candidates: Repository[]
+}) {
+  const [draft, setDraft] = useState('')
+
+  function add() {
+    const target = draft.trim().replace(/^\/+|\/+$/g, '')
+    if (!target || members.includes(target)) return
+    onChange([...members, target])
+    setDraft('')
+  }
+
+  function move(index: number, by: number) {
+    const to = index + by
+    const moved = members[index]
+    const other = members[to]
+    if (moved === undefined || other === undefined) return
+
+    const next = [...members]
+    next[index] = other
+    next[to] = moved
+    onChange(next)
+  }
+
+  return (
+    <Field
+      label="Members"
+      hint="Each child is a p2 repository, optionally with a path inside it. Order is kept as written."
+    >
+      <div className="space-y-2">
+        {members.length > 0 ? (
+          <ul className="space-y-1.5">
+            {members.map((member, index) => (
+              <li key={member} className="flex items-center gap-2 rounded-xl bg-accent px-3 py-2">
+                <span className="flex-1 font-mono text-[13px]">{member}</span>
+                <button type="button" className={iconAction} onClick={() => move(index, -1)} aria-label="Move up">
+                  <ArrowUp className="size-4" />
+                </button>
+                <button type="button" className={iconAction} onClick={() => move(index, 1)} aria-label="Move down">
+                  <ArrowDown className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  className={iconAction}
+                  onClick={() => onChange(members.filter((entry) => entry !== member))}
+                  aria-label="Remove"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="flex gap-2">
+          <Select value="" onChange={(event) => setDraft(event.target.value)} className="w-44">
+            <option value="">Repository...</option>
+            {candidates.map((candidate) => (
+              <option key={candidate.id} value={candidate.name}>
+                {candidate.name}
+              </option>
+            ))}
+          </Select>
+          <Input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder="p2-releases/commons/25.2.5"
+            className="flex-1 font-mono"
+          />
+          <Button type="button" variant="secondary" onClick={add} disabled={!draft.trim()}>
+            Add
+          </Button>
+        </div>
+      </div>
+    </Field>
+  )
+}
+
 function CreateRepositoryDialog() {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
@@ -112,11 +199,21 @@ function CreateRepositoryDialog() {
   const [retentionDays, setRetentionDays] = useState(0)
   const [categoryId, setCategoryId] = useState('')
   const [categoryName, setCategoryName] = useState('')
+  const [members, setMembers] = useState<string[]>([])
   const queryClient = useQueryClient()
 
   const isProxy = type === 'proxy'
+  const isGroup = type === 'group'
   const isNPM = format === 'npm'
   const isP2 = format === 'p2'
+
+  const existing = useQuery({
+    queryKey: ['repositories'],
+    queryFn: () => api<{ repositories: Repository[] }>('/repositories'),
+  })
+  const p2Repositories = (existing.data?.repositories ?? []).filter(
+    (entry) => entry.format === 'p2' && entry.type !== 'group',
+  )
 
   const mutation = useMutation({
     mutationFn: async () =>
@@ -128,6 +225,7 @@ function CreateRepositoryDialog() {
         visibility,
         description,
         categoryId: await resolveCategoryID(categoryId, categoryName),
+        ...(isGroup ? { members } : {}),
         ...(isProxy
           ? {
               remoteUrl,
@@ -200,8 +298,12 @@ function CreateRepositoryDialog() {
               >
                 <option value="hosted">Hosted, artifacts published here</option>
                 <option value="proxy">Proxy, mirrors a remote repository</option>
+                <option value="group">Group, one URL over several p2 sites</option>
               </Select>
             </Field>
+            {isGroup ? (
+              <MemberField members={members} onChange={setMembers} candidates={p2Repositories} />
+            ) : null}
             <CategoryField
               value={categoryId}
               onChange={setCategoryId}
@@ -312,6 +414,7 @@ function CreateRepositoryDialog() {
               disabled={
                 !name.trim() ||
                 (isProxy && !remoteUrl.trim()) ||
+                (isGroup && members.length === 0) ||
                 (categoryId === NEW_CATEGORY && !categoryName.trim()) ||
                 mutation.isPending
               }
@@ -339,9 +442,29 @@ function SettingsDialog({ repository }: { repository: Repository }) {
   const [retentionDays, setRetentionDays] = useState(repository.cacheRetentionDays)
   const [categoryId, setCategoryId] = useState(repository.categoryId ?? '')
   const [categoryName, setCategoryName] = useState('')
+  const [members, setMembers] = useState<string[]>([])
   const queryClient = useQueryClient()
 
   const isProxy = repository.type === 'proxy'
+  const isGroup = repository.type === 'group'
+
+  const detail = useQuery({
+    queryKey: ['repository', repository.name],
+    queryFn: () => api<RepositoryDetail>(`/repositories/${repository.name}`),
+    enabled: open && isGroup,
+  })
+  const existing = useQuery({
+    queryKey: ['repositories'],
+    queryFn: () => api<{ repositories: Repository[] }>('/repositories'),
+    enabled: open && isGroup,
+  })
+  const p2Repositories = (existing.data?.repositories ?? []).filter(
+    (entry) => entry.format === 'p2' && entry.type !== 'group' && entry.name !== repository.name,
+  )
+
+  useEffect(() => {
+    if (detail.data?.members) setMembers(detail.data.members)
+  }, [detail.data])
   // npm publishes are immutable regardless, so the redeploy switch would be a lie.
   const allowsRedeploy = !isProxy && repository.format !== 'npm'
 
@@ -353,6 +476,7 @@ function SettingsDialog({ repository }: { repository: Repository }) {
         description,
         allowRedeploy,
         categoryId: await resolveCategoryID(categoryId, categoryName),
+        ...(isGroup ? { members } : {}),
         ...(isProxy
           ? {
               remoteUrl,
@@ -397,12 +521,19 @@ function SettingsDialog({ repository }: { repository: Repository }) {
           <DialogHeader>
             <DialogTitle>{repository.name}</DialogTitle>
             <DialogDescription>
-              {isProxy ? 'Proxy repository settings' : 'Repository settings'}
+              {isProxy
+                ? 'Proxy repository settings'
+                : isGroup
+                  ? 'Group repository settings'
+                  : 'Repository settings'}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             {mutation.error ? <ErrorBlock message={(mutation.error as ApiError).message} /> : null}
             {purge.error ? <ErrorBlock message={(purge.error as ApiError).message} /> : null}
+            {isGroup ? (
+              <MemberField members={members} onChange={setMembers} candidates={p2Repositories} />
+            ) : null}
             <CategoryField
               value={categoryId}
               onChange={setCategoryId}

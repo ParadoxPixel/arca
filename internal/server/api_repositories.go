@@ -20,7 +20,7 @@ var (
 	policies        = []string{models.PolicyRelease, models.PolicySnapshot, models.PolicyMixed}
 	visibilities    = []string{models.VisibilityPublic, models.VisibilityPrivate}
 	permissions     = []string{models.PermissionRead, models.PermissionWrite, models.PermissionAdmin}
-	repositoryTypes = []string{models.TypeHosted, models.TypeProxy}
+	repositoryTypes = []string{models.TypeHosted, models.TypeProxy, models.TypeGroup}
 	formats         = []string{format.Maven2, format.NPM, format.P2}
 )
 
@@ -45,6 +45,7 @@ type repositoryResponse struct {
 	Components         *int64                 `json:"components,omitempty"`
 	UpdatedAt          *int64                 `json:"updatedAt,omitempty"`
 	Stats              *store.RepositoryStats `json:"stats,omitempty"`
+	Members            []string               `json:"members,omitempty"`
 }
 
 // serializeRepository never returns RemotePassword, which is write-only from
@@ -189,20 +190,21 @@ func (s *Server) routeCreateRepository(writer http.ResponseWriter, request *http
 	}
 
 	var body struct {
-		Name               string `json:"name"`
-		Format             string `json:"format"`
-		Type               string `json:"type"`
-		Policy             string `json:"policy"`
-		Visibility         string `json:"visibility"`
-		Description        string `json:"description"`
-		AllowRedeploy      bool   `json:"allowRedeploy"`
-		RemoteURL          string `json:"remoteUrl"`
-		RemoteUsername     string `json:"remoteUsername"`
-		RemotePassword     string `json:"remotePassword"`
-		MetadataTTLSeconds *int64 `json:"metadataTtlSeconds"`
-		NegativeTTLSeconds *int64 `json:"negativeTtlSeconds"`
-		CacheRetentionDays *int64 `json:"cacheRetentionDays"`
-		CategoryID         string `json:"categoryId"`
+		Name               string   `json:"name"`
+		Format             string   `json:"format"`
+		Type               string   `json:"type"`
+		Policy             string   `json:"policy"`
+		Visibility         string   `json:"visibility"`
+		Description        string   `json:"description"`
+		AllowRedeploy      bool     `json:"allowRedeploy"`
+		RemoteURL          string   `json:"remoteUrl"`
+		RemoteUsername     string   `json:"remoteUsername"`
+		RemotePassword     string   `json:"remotePassword"`
+		MetadataTTLSeconds *int64   `json:"metadataTtlSeconds"`
+		NegativeTTLSeconds *int64   `json:"negativeTtlSeconds"`
+		CacheRetentionDays *int64   `json:"cacheRetentionDays"`
+		CategoryID         string   `json:"categoryId"`
+		Members            []string `json:"members"`
 	}
 	if err := decodeBody(request, &body); err != nil {
 		return err
@@ -258,6 +260,10 @@ func (s *Server) routeCreateRepository(writer http.ResponseWriter, request *http
 	if err := validateP2(repositoryFormat, repositoryType, remoteURL); err != nil {
 		return err
 	}
+	members, err := s.validateMembers(name, repositoryFormat, repositoryType, body.Members)
+	if err != nil {
+		return err
+	}
 
 	categoryID, err := s.resolveCategory(body.CategoryID)
 	if err != nil {
@@ -287,6 +293,9 @@ func (s *Server) routeCreateRepository(writer http.ResponseWriter, request *http
 	if err := s.store.CreateRepository(repository); err != nil {
 		return err
 	}
+	if err := s.store.ReplaceMembers(repository.ID, members); err != nil {
+		return err
+	}
 
 	writeJSON(writer, http.StatusCreated, serializeRepository(*repository, models.PermissionAdmin, s.categoryNameFor(repository.CategoryID)))
 	return nil
@@ -306,6 +315,17 @@ func (s *Server) routeRepository(writer http.ResponseWriter, request *http.Reque
 	response := serializeRepository(*repository, permission, s.categoryNameFor(repository.CategoryID))
 	response.Stats = &stats
 
+	if repository.IsGroup() {
+		members, err := s.store.Members(repository.ID)
+		if err != nil {
+			return err
+		}
+		response.Members = make([]string, 0, len(members))
+		for _, member := range members {
+			response.Members = append(response.Members, member.Target)
+		}
+	}
+
 	writeJSON(writer, http.StatusOK, response)
 	return nil
 }
@@ -317,18 +337,19 @@ func (s *Server) routeUpdateRepository(writer http.ResponseWriter, request *http
 	}
 
 	var body struct {
-		Format             *string `json:"format"`
-		Policy             *string `json:"policy"`
-		Visibility         *string `json:"visibility"`
-		Description        *string `json:"description"`
-		AllowRedeploy      *bool   `json:"allowRedeploy"`
-		RemoteURL          *string `json:"remoteUrl"`
-		RemoteUsername     *string `json:"remoteUsername"`
-		RemotePassword     *string `json:"remotePassword"`
-		MetadataTTLSeconds *int64  `json:"metadataTtlSeconds"`
-		NegativeTTLSeconds *int64  `json:"negativeTtlSeconds"`
-		CacheRetentionDays *int64  `json:"cacheRetentionDays"`
-		CategoryID         *string `json:"categoryId"`
+		Format             *string   `json:"format"`
+		Policy             *string   `json:"policy"`
+		Visibility         *string   `json:"visibility"`
+		Description        *string   `json:"description"`
+		AllowRedeploy      *bool     `json:"allowRedeploy"`
+		RemoteURL          *string   `json:"remoteUrl"`
+		RemoteUsername     *string   `json:"remoteUsername"`
+		RemotePassword     *string   `json:"remotePassword"`
+		MetadataTTLSeconds *int64    `json:"metadataTtlSeconds"`
+		NegativeTTLSeconds *int64    `json:"negativeTtlSeconds"`
+		CacheRetentionDays *int64    `json:"cacheRetentionDays"`
+		CategoryID         *string   `json:"categoryId"`
+		Members            *[]string `json:"members"`
 	}
 	if err := decodeBody(request, &body); err != nil {
 		return err
@@ -407,12 +428,23 @@ func (s *Server) routeUpdateRepository(writer http.ResponseWriter, request *http
 		}
 		changes["category_id"] = categoryID
 	}
-	if len(changes) == 0 {
+	if len(changes) == 0 && body.Members == nil {
 		return fail(http.StatusBadRequest, "No changes supplied")
 	}
 
-	if err := s.store.UpdateRepository(repository.ID, changes); err != nil {
-		return err
+	if body.Members != nil {
+		members, err := s.validateMembers(repository.Name, repository.Format, repository.Type, *body.Members)
+		if err != nil {
+			return err
+		}
+		if err := s.store.ReplaceMembers(repository.ID, members); err != nil {
+			return err
+		}
+	}
+	if len(changes) > 0 {
+		if err := s.store.UpdateRepository(repository.ID, changes); err != nil {
+			return err
+		}
 	}
 
 	updated, err := s.store.RepositoryByName(repository.Name)
@@ -486,6 +518,80 @@ func normalizeRemote(repositoryType, raw string) (string, error) {
 	return normalized, nil
 }
 
+// validateMembers checks the children of a group. Only p2 groups exist so far:
+// a p2 composite is merged by the client, while a Maven or npm group would have
+// to merge metadata documents here, which is a different and much larger job.
+func (s *Server) validateMembers(name, repositoryFormat, repositoryType string, targets []string) ([]string, error) {
+	if repositoryType != models.TypeGroup {
+		if len(targets) > 0 {
+			return nil, fail(http.StatusBadRequest, "members are only valid on group repositories")
+		}
+		return nil, nil
+	}
+	if repositoryFormat != format.P2 {
+		return nil, fail(http.StatusBadRequest, "only p2 group repositories are supported")
+	}
+
+	members := make([]string, 0, len(targets))
+	seen := map[string]bool{}
+
+	for _, target := range targets {
+		target = strings.Trim(strings.TrimSpace(target), "/")
+		if target == "" {
+			continue
+		}
+		if !format.IsSafe(target) {
+			return nil, fail(http.StatusBadRequest, "%q is not a valid member path", target)
+		}
+		if seen[target] {
+			return nil, fail(http.StatusBadRequest, "%q is listed twice", target)
+		}
+		seen[target] = true
+
+		memberName, _, _ := strings.Cut(target, "/")
+		if memberName == name {
+			return nil, fail(http.StatusBadRequest, "a group cannot contain itself")
+		}
+
+		member, err := s.store.RepositoryByName(memberName)
+		if err != nil {
+			return nil, fail(http.StatusBadRequest, "there is no repository named %q", memberName)
+		}
+		if member.Format != format.P2 {
+			return nil, fail(http.StatusBadRequest, "%q is not a p2 repository", memberName)
+		}
+		// Nesting is legal in p2 but lets a cycle through, and a flat list is
+		// the whole of what a group is for.
+		if member.IsGroup() {
+			return nil, fail(http.StatusBadRequest, "%q is itself a group, which cannot be nested", memberName)
+		}
+
+		members = append(members, target)
+	}
+
+	if len(members) == 0 {
+		return nil, fail(http.StatusBadRequest, "a group needs at least one member")
+	}
+	return members, nil
+}
+
+// validateP2 pins a p2 proxy to a host root. Composite sites routinely point at
+// children above their own directory, as the Eclipse release train does with
+// '../../technology/epp/packages/', so a remote pinned to one update site loses
+// half its children. Proxying the host root keeps those resolvable inside this
+// repository. A hosted p2 repository has no remote and no such constraint.
+func validateP2(repositoryFormat, repositoryType, remoteURL string) error {
+	if repositoryFormat != format.P2 || repositoryType != models.TypeProxy {
+		return nil
+	}
+
+	parsed, err := url.Parse(remoteURL)
+	if err != nil || strings.Trim(parsed.Path, "/") != "" {
+		return fail(http.StatusBadRequest, "remoteUrl for a p2 proxy must be a host root, such as https://download.eclipse.org")
+	}
+	return nil
+}
+
 func (s *Server) routeListGrants(writer http.ResponseWriter, request *http.Request) error {
 	repository, err := s.loadAdministered(request)
 	if err != nil {
@@ -545,21 +651,4 @@ func orDefault(value, fallback string) string {
 		return fallback
 	}
 	return value
-}
-
-// validateP2 pins a p2 proxy to a host root. Composite sites routinely point at
-// children above their own directory, as the Eclipse release train does with
-// '../../technology/epp/packages/', so a remote pinned to one update site loses
-// half its children. Proxying the host root keeps those resolvable inside this
-// repository. A hosted p2 repository has no remote and no such constraint.
-func validateP2(repositoryFormat, repositoryType, remoteURL string) error {
-	if repositoryFormat != format.P2 || repositoryType != models.TypeProxy {
-		return nil
-	}
-
-	parsed, err := url.Parse(remoteURL)
-	if err != nil || strings.Trim(parsed.Path, "/") != "" {
-		return fail(http.StatusBadRequest, "remoteUrl for a p2 proxy must be a host root, such as https://download.eclipse.org")
-	}
-	return nil
 }
