@@ -9,6 +9,37 @@ export function plural(count: number, singular: string, many = `${singular}s`): 
   return `${count} ${count === 1 ? singular : many}`
 }
 
+// navigator.clipboard only exists in a secure context, and an Arca instance is
+// commonly reached over plain HTTP on an internal host, so keep the old
+// execCommand path as the fallback.
+export async function copyText(text: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // Permission denied or no user gesture, try the textarea instead.
+    }
+  }
+
+  const area = document.createElement('textarea')
+  area.value = text
+  area.setAttribute('readonly', '')
+  area.style.position = 'fixed'
+  area.style.top = '0'
+  area.style.opacity = '0'
+  document.body.append(area)
+  area.select()
+
+  try {
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    area.remove()
+  }
+}
+
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB']
 
 export function formatBytes(bytes: number): string {

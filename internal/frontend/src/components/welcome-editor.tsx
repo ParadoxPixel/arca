@@ -49,13 +49,13 @@ export function WelcomeEditor({
       </TabsContent>
 
       <TabsContent value="preview" className="mt-0">
-        <div className="relative overflow-hidden rounded-2xl bg-panel px-6 py-6 text-panel-foreground">
-          <BrandSplotch className="left-0 top-0 opacity-70 dark:opacity-40" />
+        <div className="relative overflow-hidden rounded-2xl bg-muted px-6 py-6 text-foreground">
+          <BrandSplotch className="left-full top-0 opacity-20 dark:opacity-25" />
           <div className="relative">
             {value.trim() ? (
               <Markdown source={value} className="max-w-2xl" />
             ) : (
-              <p className="text-[13px] text-panel-muted">
+              <p className="text-[13px] text-muted-foreground">
                 Nothing to show. The landing page skips the hero when the welcome text is empty.
               </p>
             )}
