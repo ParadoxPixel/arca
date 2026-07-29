@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card'
 import { EmptyState, ErrorBlock, LoadingBlock, PageHeading } from '@/components/ui/feedback'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { CopyButton } from '@/components/copy-button'
+import { WelcomeHero } from '@/components/welcome-hero'
 import { api, type Repository } from '@/lib/api'
 import { categoriesQuery, groupRepositories, needsHeadings } from '@/lib/categories'
 import { useSession } from '@/lib/session'
@@ -71,7 +72,7 @@ function RepositoryTable({ repositories }: { repositories: Repository[] }) {
   )
 }
 
-export function RepositoriesRoute() {
+function RepositoryIndex() {
   const { user } = useSession()
   const { data, error, isLoading } = useQuery({
     queryKey: ['repositories'],
@@ -130,6 +131,15 @@ export function RepositoriesRoute() {
           {plural(repositories.length, 'repository', 'repositories')} · copy a row to get its URL
         </p>
       ) : null}
+    </>
+  )
+}
+
+export function RepositoriesRoute() {
+  return (
+    <>
+      <WelcomeHero />
+      <RepositoryIndex />
     </>
   )
 }

@@ -16,6 +16,7 @@ type migration struct {
 // new column empty and then fail to build a unique index over the duplicates.
 var migrations = []migration{
 	{"0001_component_namespace", renameCoordinateColumns},
+	{"0002_welcome_text", seedWelcomeText},
 }
 
 func (s *Store) runMigrations() error {
@@ -35,6 +36,19 @@ func (s *Store) runMigrations() error {
 		}
 	}
 	return nil
+}
+
+// seedWelcomeText only touches installations that predate the landing page. A
+// fresh database has no settings table yet at this point and gets its welcome
+// text from the setup wizard instead.
+func seedWelcomeText(db *gorm.DB) error {
+	if !db.Migrator().HasTable("settings") {
+		return nil
+	}
+	return db.Exec(
+		"INSERT INTO settings (key, value) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = ?)",
+		SettingWelcomeText, DefaultWelcomeText, SettingWelcomeText,
+	).Error
 }
 
 func renameCoordinateColumns(db *gorm.DB) error {

@@ -46,6 +46,14 @@ export function put<T>(path: string, body: unknown): Promise<T> {
   return api<T>(path, { method: 'PUT', body: JSON.stringify(body) })
 }
 
+export function upload<T>(path: string, file: File): Promise<T> {
+  return api<T>(path, {
+    method: 'PUT',
+    body: file,
+    headers: { 'content-type': file.type || 'application/octet-stream' },
+  })
+}
+
 export function del<T>(path: string): Promise<T> {
   return api<T>(path, { method: 'DELETE' })
 }
@@ -115,6 +123,8 @@ export interface Bootstrap {
   initialized: boolean
   instanceName: string
   themeColor: string
+  welcomeText: string
+  logoUrl: string
   build: Build
   user: User | null
 }
@@ -122,6 +132,8 @@ export interface Bootstrap {
 export interface InstanceSettings {
   instanceName: string
   themeColor: string
+  welcomeText: string
+  logoUrl: string
 }
 
 export interface Category {

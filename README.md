@@ -16,6 +16,7 @@ is no separate database to run and no config file to write before the first star
 - Public repositories readable without an account, private ones granted per user
 - Generated `maven-metadata.xml` and npm packuments, built from the database
 - Traffic, storage and artifact management dashboards
+- A markdown welcome hero, an accent colour and a logo of your own on the landing page
 - Guided first-run setup
 
 ## Run it

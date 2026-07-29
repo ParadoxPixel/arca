@@ -20,6 +20,16 @@ func validateThemeColor(value string) (string, error) {
 	return normalized, nil
 }
 
+const maximumWelcomeLength = 8000
+
+func validateWelcomeText(value string) (string, error) {
+	text := strings.TrimSpace(value)
+	if len(text) > maximumWelcomeLength {
+		return "", fail(http.StatusBadRequest, "welcomeText must be at most %d characters", maximumWelcomeLength)
+	}
+	return text, nil
+}
+
 func (s *Server) routeSettings(writer http.ResponseWriter, request *http.Request) error {
 	if _, err := requireAdmin(request); err != nil {
 		return err
@@ -28,6 +38,8 @@ func (s *Server) routeSettings(writer http.ResponseWriter, request *http.Request
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"instanceName": s.store.InstanceName(),
 		"themeColor":   s.store.ThemeColor(),
+		"welcomeText":  s.store.WelcomeText(),
+		"logoUrl":      logoURL(s.store.Logo()),
 	})
 	return nil
 }
@@ -40,6 +52,7 @@ func (s *Server) routeUpdateSettings(writer http.ResponseWriter, request *http.R
 	var body struct {
 		InstanceName *string `json:"instanceName"`
 		ThemeColor   *string `json:"themeColor"`
+		WelcomeText  *string `json:"welcomeText"`
 	}
 	if err := decodeBody(request, &body); err != nil {
 		return err
@@ -61,6 +74,14 @@ func (s *Server) routeUpdateSettings(writer http.ResponseWriter, request *http.R
 			return err
 		}
 		updates[store.SettingThemeColor] = color
+	}
+
+	if body.WelcomeText != nil {
+		welcome, err := validateWelcomeText(*body.WelcomeText)
+		if err != nil {
+			return err
+		}
+		updates[store.SettingWelcomeText] = welcome
 	}
 
 	for key, value := range updates {

@@ -28,7 +28,7 @@ import {
   Users,
   X,
 } from 'lucide-react'
-import { BrandSplotch, Mark } from '@/components/brand'
+import { BrandSplotch, Logo } from '@/components/brand'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { useRefreshSession, useSession } from '@/lib/session'
@@ -122,7 +122,7 @@ function RailContent({ onNavigate }: { onNavigate?: () => void }) {
         to="/"
         className="mx-3 mt-4 flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors hover:bg-accent/70"
       >
-        <Mark className="size-5" />
+        <Logo className="size-5" />
         <span className="truncate font-semibold tracking-tight">{instanceName}</span>
       </Link>
 
@@ -383,7 +383,7 @@ export function AppShell() {
               <Menu className="size-5" />
             </button>
             <Link to="/" className="flex items-center gap-2 lg:hidden">
-              <Mark className="size-5" />
+              <Logo className="size-5" />
               <span className="hidden truncate font-semibold sm:inline">{instanceName}</span>
             </Link>
             <SearchBar />
