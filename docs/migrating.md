@@ -4,6 +4,9 @@ layout: default
 nav_order: 6
 ---
 
+![Arca](docs/assets/img/nexusimport.png)
+
+
 # Migrating from Nexus
 
 Arca reads a Sonatype Nexus 3 instance and reproduces its repositories here. It only ever sends `GET`
