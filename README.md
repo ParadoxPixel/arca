@@ -50,6 +50,10 @@ make dev        # vite on :5173, which starts the Go server on :8080 in dev mode
 make test       # go tests plus a frontend typecheck
 ```
 
+
+## Need help?
+[Join our Discord!](https://discord.gg/cep5gXDVHf) Our lovely developer and friends will try to help you out.
+
 ## Layout
 
 | Path | Contents |

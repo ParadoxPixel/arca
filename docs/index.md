@@ -41,6 +41,9 @@ before the first start.
 | Put it on a server | [Deploying]({{ site.baseurl }}/deploying) |
 | Run it day to day | [Managing an installation]({{ site.baseurl }}/managing) |
 
+## Need help?
+[Join our Discord!](https://discord.gg/cep5gXDVHf) Our lovely developer and friends will try to help you out.
+
 ## Finding things
 
 Search spans every repository you can read, in any format, matching names and namespaces.
