@@ -1,0 +1,31 @@
+title: Arca
+description: A Maven and npm repository server that runs as a single Go binary.
+url: https://pixelib.github.io
+baseurl: /arca
+
+remote_theme: just-the-docs/just-the-docs
+plugins:
+  - jekyll-remote-theme
+
+color_scheme: light
+search_enabled: true
+
+heading_anchors: true
+
+aux_links:
+  GitHub: https://github.com/Pixelib/arca
+aux_links_new_tab: true
+
+nav_external_links:
+  - title: Live instance
+    url: https://repo.pixelib.dev
+    hide_icon: false
+
+footer_content: >-
+  Arca is open source. Screenshots are from
+  <a href="https://repo.pixelib.dev">repo.pixelib.dev</a>.
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - vendor

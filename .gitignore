@@ -1,0 +1,12 @@
+/data
+/bin
+/build
+/internal/frontend/node_modules
+/internal/frontend/dist/*
+!/internal/frontend/dist/index.html
+*.db
+*.db-shm
+*.db-wal
+/.idea
+/deploy
+/deploy.s

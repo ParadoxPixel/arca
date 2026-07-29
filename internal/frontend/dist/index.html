@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+    <title>Arca</title>
+    <script>
+      const stored = localStorage.getItem('cn-theme')
+      const dark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
+      document.documentElement.classList.toggle('dark', dark)
+    </script>
+    <script type="module" crossorigin src="/assets/index-CRO8UY-q.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-react-CRwv3FO_.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-icons-C5NvIIAT.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-DC5HCQzn.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

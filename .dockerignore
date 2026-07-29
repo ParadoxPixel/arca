@@ -1,0 +1,14 @@
+.git
+.github
+.idea
+bin
+build
+data
+deploy
+deploy.sh
+docs
+internal/frontend/node_modules
+internal/frontend/dist
+*.db
+*.db-shm
+*.db-wal

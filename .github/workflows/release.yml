@@ -1,0 +1,204 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build a release for
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  IMAGE: ghcr.io/pixelib/arca
+
+jobs:
+  # The bundle is built once and shared, so every platform ships bit for bit the
+  # same frontend.
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: internal/frontend/pnpm-lock.yaml
+
+      - name: Build
+        working-directory: internal/frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: internal/frontend/dist
+          retention-days: 1
+
+  binaries:
+    needs: frontend
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: internal/frontend/dist
+
+      - name: Resolve the tag
+        id: tag
+        run: echo "value=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+          VERSION: ${{ steps.tag.outputs.value }}
+        run: |
+          set -euo pipefail
+          name="arca"
+          if [ "$GOOS" = windows ]; then name="arca.exe"; fi
+
+          mkdir -p dist
+          go build -trimpath \
+            -ldflags "-s -w \
+              -X arca/internal/version.Version=${VERSION} \
+              -X arca/internal/version.Commit=${GITHUB_SHA} \
+              -X arca/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -o "dist/${name}" ./cmd/arca
+
+      - name: Package
+        id: package
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ steps.tag.outputs.value }}
+        run: |
+          set -euo pipefail
+          base="arca_${VERSION}_${GOOS}_${GOARCH}"
+          cp README.md dist/
+
+          cd dist
+          if [ "$GOOS" = windows ]; then
+            zip -q "../${base}.zip" arca.exe README.md
+            echo "file=${base}.zip" >> "$GITHUB_OUTPUT"
+          else
+            tar -czf "../${base}.tar.gz" arca README.md
+            echo "file=${base}.tar.gz" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.file }}
+          path: ${{ steps.package.outputs.file }}
+          retention-days: 1
+
+  publish:
+    needs: binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: arca_*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Resolve the tag
+        id: tag
+        run: echo "value=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Checksums
+        working-directory: artifacts
+        run: |
+          sha256sum arca_* > checksums.txt
+          cat checksums.txt
+
+      - name: Create the release if it does not exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --title "$TAG" --generate-notes
+
+      - name: Attach the artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.value }}
+        working-directory: artifacts
+        run: gh release upload "$TAG" arca_* checksums.txt --clobber
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve the tag and build time
+        id: tag
+        run: |
+          echo "value=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+          echo "built=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ steps.tag.outputs.value }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.tag.outputs.value }}
+            type=semver,pattern={{major}},value=${{ steps.tag.outputs.value }}
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.tag.outputs.value }}
+            COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ steps.tag.outputs.built }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,11 @@
+{
+  "name": "@demo/greeter",
+  "version": "1.0.0",
+  "description": "A dependency-free package used to verify npm publishing against a local Arca instance",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.js",
+  "files": [
+    "src"
+  ]
+}
