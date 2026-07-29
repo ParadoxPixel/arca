@@ -3,7 +3,10 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
+
+	"arca/internal/store"
 )
 
 func brandingOf(t *testing.T, body string) (instanceName string, themeColor string) {
@@ -17,6 +20,18 @@ func brandingOf(t *testing.T, body string) (instanceName string, themeColor stri
 		t.Fatalf("decoding branding: %v (%s)", err, body)
 	}
 	return decoded.InstanceName, decoded.ThemeColor
+}
+
+func welcomeTextOf(t *testing.T, body string) string {
+	t.Helper()
+
+	var decoded struct {
+		WelcomeText string `json:"welcomeText"`
+	}
+	if err := json.Unmarshal([]byte(body), &decoded); err != nil {
+		t.Fatalf("decoding a welcome text: %v (%s)", err, body)
+	}
+	return decoded.WelcomeText
 }
 
 func settingsOf(t *testing.T, body string) map[string]string {
@@ -78,6 +93,72 @@ func TestSettingsDefaultsAndUpdates(t *testing.T) {
 	})
 }
 
+func TestWelcomeText(t *testing.T) {
+	instance := newTestInstance(t)
+
+	t.Run("the wizard is offered the default before setup runs", func(t *testing.T) {
+		body := expectStatus(t, instance.api(http.MethodGet, "/api/bootstrap", ""), http.StatusOK)
+		if welcomeTextOf(t, body) != store.DefaultWelcomeText {
+			t.Fatalf("bootstrap = %s, want the default welcome text", body)
+		}
+	})
+
+	instance.setup()
+
+	t.Run("setup stores the default when the wizard sends none", func(t *testing.T) {
+		settings := settingsOf(t, expectStatus(t,
+			instance.api(http.MethodGet, "/api/admin/settings", ""), http.StatusOK))
+		if settings["welcomeText"] != store.DefaultWelcomeText {
+			t.Fatalf("welcomeText = %q, want the default", settings["welcomeText"])
+		}
+	})
+
+	t.Run("it can be rewritten", func(t *testing.T) {
+		body := expectStatus(t, instance.api(http.MethodPatch, "/api/admin/settings",
+			`{"welcomeText":"## Hello\n\nBuilds live here."}`), http.StatusOK)
+
+		if settingsOf(t, body)["welcomeText"] != "## Hello\n\nBuilds live here." {
+			t.Fatalf("welcomeText = %s", body)
+		}
+	})
+
+	t.Run("anyone reaching the landing page reads it", func(t *testing.T) {
+		request := instance.request(http.MethodGet, "/api/bootstrap", "")
+		body := expectStatus(t, instance.doAnonymously(request), http.StatusOK)
+
+		if welcomeTextOf(t, body) != "## Hello\n\nBuilds live here." {
+			t.Fatalf("bootstrap = %s", body)
+		}
+	})
+
+	t.Run("clearing it leaves the landing page without a hero", func(t *testing.T) {
+		body := expectStatus(t, instance.api(http.MethodPatch, "/api/admin/settings",
+			`{"welcomeText":"  "}`), http.StatusOK)
+
+		if settingsOf(t, body)["welcomeText"] != "" {
+			t.Fatalf("welcomeText = %s, want it empty", body)
+		}
+	})
+}
+
+func TestSetupAcceptsAWelcomeText(t *testing.T) {
+	instance := newTestInstance(t)
+
+	expectStatus(t, instance.api(http.MethodPost, "/api/setup", `{
+		"instanceName": "welcoming",
+		"welcomeText": "# Read me first",
+		"name": "Admin",
+		"email": "`+administratorEmail+`",
+		"password": "`+administratorPassword+`",
+		"seedRepositories": false
+	}`), http.StatusCreated)
+
+	body := expectStatus(t, instance.api(http.MethodGet, "/api/bootstrap", ""), http.StatusOK)
+	if welcomeTextOf(t, body) != "# Read me first" {
+		t.Fatalf("bootstrap = %s", body)
+	}
+}
+
 func TestSettingsRejectsBadInput(t *testing.T) {
 	instance := newTestInstance(t)
 	instance.setup()
@@ -91,6 +172,7 @@ func TestSettingsRejectsBadInput(t *testing.T) {
 		{"a named colour", `{"themeColor":"rebeccapurple"}`},
 		{"a css injection", `{"themeColor":"#fff;background:url(x)"}`},
 		{"an empty instance name", `{"instanceName":"   "}`},
+		{"a welcome text past the limit", `{"welcomeText":"` + strings.Repeat("x", 8001) + `"}`},
 	}
 
 	for _, testCase := range testCases {

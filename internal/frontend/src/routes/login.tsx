@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Mark } from '@/components/brand'
+import { Logo } from '@/components/brand'
 import { Button } from '@/components/ui/button'
 import { Field, Input } from '@/components/ui/input'
 import { ErrorBlock } from '@/components/ui/feedback'
@@ -36,7 +36,7 @@ export function LoginRoute() {
       <div className="w-full max-w-sm space-y-8">
         <div className="space-y-5 text-center">
           <Link to="/" className="inline-flex items-center gap-2.5">
-            <Mark className="size-6" />
+            <Logo className="size-6" />
             <span className="text-lg font-semibold tracking-tight">{instanceName}</span>
           </Link>
           <h1 className="text-2xl font-semibold">Sign in</h1>

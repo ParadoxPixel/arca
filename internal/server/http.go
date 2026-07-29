@@ -15,6 +15,7 @@ func (s *Server) routes() {
 
 	api.Handle("/bootstrap", handler(s.routeBootstrap)).Methods(http.MethodGet)
 	api.Handle("/setup", handler(s.routeSetup)).Methods(http.MethodPost)
+	api.Handle("/branding/logo", handler(s.routeLogo)).Methods(http.MethodGet)
 	api.Handle("/auth/login", handler(s.routeLogin)).Methods(http.MethodPost)
 	api.Handle("/auth/logout", handler(s.routeLogout)).Methods(http.MethodPost)
 	api.Handle("/auth/me", handler(s.routeMe)).Methods(http.MethodGet)
@@ -57,6 +58,8 @@ func (s *Server) routes() {
 	api.Handle("/admin/components", handler(s.routeComponents)).Methods(http.MethodGet)
 	api.Handle("/admin/settings", handler(s.routeSettings)).Methods(http.MethodGet)
 	api.Handle("/admin/settings", handler(s.routeUpdateSettings)).Methods(http.MethodPatch)
+	api.Handle("/admin/branding/logo", handler(s.routeUploadLogo)).Methods(http.MethodPut)
+	api.Handle("/admin/branding/logo", handler(s.routeDeleteLogo)).Methods(http.MethodDelete)
 
 	api.Handle("/admin/migration", handler(s.routeMigrationStatus)).Methods(http.MethodGet)
 	api.Handle("/admin/migration", handler(s.routeStartMigration)).Methods(http.MethodPost)

@@ -26,6 +26,8 @@ before the first start.
   they cannot drift from what is actually stored.
 - **Insights.** Traffic, storage and per version artifact management, with the numbers coming from
   real requests rather than estimates.
+- **Your own front page.** A markdown welcome text, an accent colour and a logo of your own, so the
+  landing page explains what the instance is for instead of listing repositories at a stranger.
 
 ## Where to start
 

@@ -1,4 +1,5 @@
 import { useId } from 'react'
+import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
 export function Mark({ className }: { className?: string }) {
@@ -20,6 +21,22 @@ export function Mark({ className }: { className?: string }) {
         <polygon points="140,20 140,140 120,120 120,0" opacity=".8" />
       </g>
     </svg>
+  )
+}
+
+// Logo falls back to the built in mark, so every place that brands the instance
+// picks up an uploaded logo without knowing whether one exists.
+export function Logo({ className }: { className?: string }) {
+  const { instanceName, logoUrl } = useSession()
+
+  if (!logoUrl) return <Mark className={className} />
+
+  return (
+    <img
+      src={logoUrl}
+      alt={instanceName}
+      className={cn('size-5 shrink-0 object-contain', className)}
+    />
   )
 }
 

@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Usage struct {
@@ -11,6 +12,9 @@ type Usage struct {
 	Bytes int64 `json:"bytes"`
 }
 
+// Usage measures the artifacts. Directories the server keeps for itself are
+// named with a leading dot, which no repository key can start with, and they are
+// left out so what is left over reads as artifact bytes nothing points at.
 func (s *Store) Usage() (Usage, error) {
 	var usage Usage
 
@@ -19,7 +23,7 @@ func (s *Store) Usage() (Usage, error) {
 			return err
 		}
 		if entry.IsDir() {
-			if path == filepath.Join(s.root, temporaryDirectory) {
+			if filepath.Dir(path) == s.root && strings.HasPrefix(entry.Name(), ".") {
 				return fs.SkipDir
 			}
 			return nil

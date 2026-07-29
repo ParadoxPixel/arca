@@ -6,14 +6,19 @@ import { Button } from '@/components/ui/button'
 import { Checkbox, Field, Input, Select } from '@/components/ui/input'
 import { ErrorBlock } from '@/components/ui/feedback'
 import { ThemeColorField, isThemeColor } from '@/components/theme-color-field'
+import { WelcomeEditor } from '@/components/welcome-editor'
 import { ApiError, post } from '@/lib/api'
-import { useRefreshSession } from '@/lib/session'
+import { useRefreshSession, useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
 const STEPS = [
   {
     title: 'Instance',
     blurb: 'Name this deployment and pick the accent it is branded with.',
+  },
+  {
+    title: 'Welcome',
+    blurb: 'The hero on the landing page. Write what this instance is for, in markdown.',
   },
   {
     title: 'Administrator',
@@ -23,9 +28,11 @@ const STEPS = [
 ] as const
 
 export function SetupRoute() {
+  const session = useSession()
   const [step, setStep] = useState(0)
   const [instanceName, setInstanceName] = useState('arca')
   const [themeColor, setThemeColor] = useState('#4f46e5')
+  const [welcomeText, setWelcomeText] = useState(session.welcomeText)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -44,7 +51,7 @@ export function SetupRoute() {
   const stepValid =
     step === 0
       ? instanceName.trim().length > 0 && isThemeColor(themeColor)
-      : step === 1
+      : step === 2
         ? name.trim().length > 0 &&
           /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) &&
           password.length >= 10 &&
@@ -64,6 +71,7 @@ export function SetupRoute() {
       await post('/setup', {
         instanceName: instanceName.trim(),
         themeColor,
+        welcomeText,
         name: name.trim(),
         email: email.trim().toLowerCase(),
         password,
@@ -116,7 +124,10 @@ export function SetupRoute() {
       </aside>
 
       <main className="flex items-center px-2 py-10 sm:px-8 lg:px-16">
-        <form onSubmit={submit} className="w-full max-w-md space-y-7">
+        <form
+          onSubmit={submit}
+          className={cn('w-full space-y-7', step === 1 ? 'max-w-2xl' : 'max-w-md')}
+        >
           <div className="space-y-1.5">
             <p className="text-[13px] font-medium text-primary">
               Step {step + 1} of {STEPS.length}
@@ -146,6 +157,10 @@ export function SetupRoute() {
           ) : null}
 
           {step === 1 ? (
+            <WelcomeEditor value={welcomeText} onChange={setWelcomeText} rows={14} />
+          ) : null}
+
+          {step === 2 ? (
             <div className="space-y-5">
               <Field label="Full name">
                 <Input
@@ -186,7 +201,7 @@ export function SetupRoute() {
             </div>
           ) : null}
 
-          {step === 2 ? (
+          {step === 3 ? (
             <div className="space-y-5">
               <label className="flex items-start gap-3 rounded-2xl bg-muted p-4">
                 <Checkbox

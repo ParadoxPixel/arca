@@ -59,10 +59,19 @@ func (s *Server) routeBootstrap(writer http.ResponseWriter, request *http.Reques
 		return err
 	}
 
+	// Before setup runs there is nothing stored yet, so the wizard is handed the
+	// default to start its welcome text from.
+	welcomeText := s.store.WelcomeText()
+	if !initialized {
+		welcomeText = store.DefaultWelcomeText
+	}
+
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"initialized":  initialized,
 		"instanceName": s.store.InstanceName(),
 		"themeColor":   s.store.ThemeColor(),
+		"welcomeText":  welcomeText,
+		"logoUrl":      logoURL(s.store.Logo()),
 		"build":        version.Current(),
 		"user":         identityOf(currentUser(request)),
 	})
@@ -90,13 +99,14 @@ func (s *Server) routeSetup(writer http.ResponseWriter, request *http.Request) e
 	}
 
 	var body struct {
-		InstanceName     string `json:"instanceName"`
-		ThemeColor       string `json:"themeColor"`
-		Name             string `json:"name"`
-		Email            string `json:"email"`
-		Password         string `json:"password"`
-		SeedRepositories *bool  `json:"seedRepositories"`
-		PublicByDefault  bool   `json:"publicByDefault"`
+		InstanceName     string  `json:"instanceName"`
+		ThemeColor       string  `json:"themeColor"`
+		WelcomeText      *string `json:"welcomeText"`
+		Name             string  `json:"name"`
+		Email            string  `json:"email"`
+		Password         string  `json:"password"`
+		SeedRepositories *bool   `json:"seedRepositories"`
+		PublicByDefault  bool    `json:"publicByDefault"`
 	}
 	if err := decodeBody(request, &body); err != nil {
 		return err
@@ -109,6 +119,13 @@ func (s *Server) routeSetup(writer http.ResponseWriter, request *http.Request) e
 	themeColor, err := validateThemeColor(orDefault(body.ThemeColor, store.DefaultThemeColor))
 	if err != nil {
 		return err
+	}
+	welcomeText := store.DefaultWelcomeText
+	if body.WelcomeText != nil {
+		welcomeText, err = validateWelcomeText(*body.WelcomeText)
+		if err != nil {
+			return err
+		}
 	}
 	name, err := requireText(body.Name, "name", 120)
 	if err != nil {
@@ -149,6 +166,9 @@ func (s *Server) routeSetup(writer http.ResponseWriter, request *http.Request) e
 			return err
 		}
 		if err := tx.SetSetting(store.SettingThemeColor, themeColor); err != nil {
+			return err
+		}
+		if err := tx.SetSetting(store.SettingWelcomeText, welcomeText); err != nil {
 			return err
 		}
 		if err := tx.SetSetting(store.SettingInitialized, "true"); err != nil {

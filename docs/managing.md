@@ -67,6 +67,25 @@ verified with a single hash, while a password runs PBKDF2 on every request.
 Categories group repositories in the sidebar and on the index without touching their URLs. They are
 presentation only. Deleting one leaves its repositories in place, uncategorised.
 
+## Branding and the landing page
+
+Settings holds what this deployment calls itself and what visitors read when they arrive.
+
+- **Instance name** shows in the sidebar, the browser tab and the Maven snippets.
+- **Theme color** is the accent behind the navigation. Any hex colour works.
+- **Logo** replaces the built in mark in the sidebar, on the sign in screen and on the landing page.
+  PNG, JPEG, GIF, WebP or SVG, up to 512 KB. The bytes are checked, so a file that is not an image
+  is rejected whatever it is named, and an uploaded SVG is served under a policy that stops it
+  running scripts.
+- **Welcome text** is the hero above the repository index, written in markdown and previewed while
+  you edit it. Headings, bold, italic, inline code, lists, quotes, rules and links are supported.
+  Everyone who can reach the landing page reads it, signed in or not, so keep it to what the
+  instance is for and where to go next.
+
+The setup wizard asks for the welcome text on first run and starts it from a default. Installations
+that predate this get the same default on upgrade. Clearing the text drops the hero and leaves the
+repository index on its own.
+
 ## Health
 
 ![The health dashboard]({{ site.baseurl }}/assets/img/health.jpg)
