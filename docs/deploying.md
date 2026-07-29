@@ -46,11 +46,24 @@ volumes:
   arca-data:
 ```
 
+To keep the data somewhere you can see it, swap the named volume for a bind mount and chown it once:
+
+```sh
+mkdir -p ./data && sudo chown -R 65532:65532 ./data
+```
+
+```yaml
+    volumes:
+      - ./data:/data
+```
+
 Everything lives in `/data`: the SQLite database at `/data/arca.db` and the artifacts under
 `/data/storage`. Keep that volume and an upgrade is `docker compose pull && docker compose up -d`.
 
-The image runs as the non root user `65532`. A named volume is chowned for you, but a bind mount is
-not, so `chown -R 65532:65532` the host directory first or the server cannot write to it.
+The image runs as the non root user `65532`. A named volume picks that up from the image, so it works
+with no extra steps. A **bind mount** does not: Docker mounts the host directory with its own
+ownership, so `chown -R 65532:65532 /your/host/path` first, otherwise the server exits at startup
+with `/data is not writable by uid 65532`.
 
 Pin a version rather than tracking `latest` if you want upgrades to be a decision:
 `ghcr.io/pixelib/arca:1.2.0`, `:1.2` and `:1` are all published.

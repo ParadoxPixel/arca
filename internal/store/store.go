@@ -21,10 +21,30 @@ type Store struct {
 	db *gorm.DB
 }
 
+// checkWritable reports an unwritable data directory in those words. SQLite
+// answers the same situation with "unable to open database file: out of memory",
+// which sends people looking for a memory problem that is not there.
+func checkWritable(directory string) error {
+	probe, err := os.CreateTemp(directory, ".write-probe-*")
+	if err != nil {
+		if user := os.Getuid(); user >= 0 {
+			return fmt.Errorf("%s is not writable by uid %d: %w", directory, user, err)
+		}
+		return fmt.Errorf("%s is not writable: %w", directory, err)
+	}
+
+	name := probe.Name()
+	probe.Close()
+	return os.Remove(name)
+}
+
 func Open(path string) (*Store, error) {
 	if directory := filepath.Dir(path); directory != "" {
 		if err := os.MkdirAll(directory, 0o755); err != nil {
 			return nil, fmt.Errorf("create database directory: %w", err)
+		}
+		if err := checkWritable(directory); err != nil {
+			return nil, err
 		}
 	}
 

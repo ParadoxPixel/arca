@@ -37,13 +37,18 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
       -X arca/internal/version.BuildTime=${BUILD_TIME}" \
     -o /out/arca ./cmd/arca
 
+# An empty named volume inherits the ownership of the image directory it is
+# mounted over. Shipping /data owned by the runtime user is what makes
+# `-v arca-data:/data` writable without a chown on the host.
+RUN mkdir -p /data
+
 FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=build /out/arca /arca
+COPY --from=build --chown=65532:65532 /data /data
 
-# Matches the nonroot user in the base image, so a mounted volume needs to be
-# owned by 65532 for the server to write to it.
-USER nonroot:nonroot
+# 65532 is nonroot in the distroless base image.
+USER 65532:65532
 
 ENV PORT=8080 \
     DATABASE_PATH=/data/arca.db \
