@@ -24,6 +24,7 @@ import {
   Search,
   Settings,
   Shield,
+  Wrench,
   Users,
   X,
 } from 'lucide-react'
@@ -43,6 +44,7 @@ const managePages = [
   { to: '/admin/categories', label: 'Categories', icon: FolderTree },
   { to: '/admin/users', label: 'Users', icon: Users },
   { to: '/admin/settings', label: 'Settings', icon: Settings },
+  { to: '/admin/maintenance', label: 'Maintenance', icon: Wrench },
 ]
 
 function RailSection({ label, children }: { label: string; children: ReactNode }) {

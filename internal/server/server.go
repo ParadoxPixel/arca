@@ -21,16 +21,17 @@ import (
 const diskUsageTTL = time.Minute
 
 type Server struct {
-	config   config.Config
-	store    *store.Store
-	blobs    *blob.Store
-	resolver *auth.Resolver
-	traffic  *trafficRecorder
-	remote   *proxy.Client
-	flight   *proxy.Flight
-	router   *mux.Router
-	http     *http.Server
-	started  time.Time
+	config    config.Config
+	store     *store.Store
+	blobs     *blob.Store
+	resolver  *auth.Resolver
+	traffic   *trafficRecorder
+	remote    *proxy.Client
+	flight    *proxy.Flight
+	router    *mux.Router
+	http      *http.Server
+	started   time.Time
+	migration *migrationRun
 
 	diskMutex      sync.Mutex
 	diskUsageCache blob.Usage
@@ -53,15 +54,16 @@ func New(configuration config.Config) (*Server, error) {
 	}
 
 	server := &Server{
-		config:   configuration,
-		store:    database,
-		blobs:    blobs,
-		resolver: auth.NewResolver(database),
-		traffic:  newTrafficRecorder(database),
-		remote:   proxy.NewClient(configuration.ProxyTimeout),
-		flight:   proxy.NewFlight(),
-		router:   mux.NewRouter(),
-		started:  time.Now(),
+		config:    configuration,
+		store:     database,
+		blobs:     blobs,
+		resolver:  auth.NewResolver(database),
+		traffic:   newTrafficRecorder(database),
+		remote:    proxy.NewClient(configuration.ProxyTimeout),
+		flight:    proxy.NewFlight(),
+		router:    mux.NewRouter(),
+		started:   time.Now(),
+		migration: newMigrationRun(),
 	}
 	server.routes()
 

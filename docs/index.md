@@ -35,6 +35,7 @@ before the first start.
 | Resolve and publish jars | [Using it from Maven]({{ site.baseurl }}/maven) |
 | Resolve and publish packages | [Using it from npm]({{ site.baseurl }}/npm) |
 | Resolve Eclipse bundles and features | [Using it from Eclipse]({{ site.baseurl }}/p2) |
+| Move off Sonatype Nexus | [Migrating from Nexus]({{ site.baseurl }}/migrating) |
 | Put it on a server | [Deploying]({{ site.baseurl }}/deploying) |
 | Run it day to day | [Managing an installation]({{ site.baseurl }}/managing) |
 

@@ -57,6 +57,47 @@ export type Visibility = 'public' | 'private'
 export type RepositoryType = 'hosted' | 'proxy' | 'group'
 export type RepositoryFormat = 'maven2' | 'npm' | 'p2'
 
+export type MigrationState = 'idle' | 'running' | 'done' | 'cancelled' | 'failed'
+export type MigrationRepositoryState = 'pending' | 'running' | 'done' | 'failed' | 'skipped'
+
+export interface MigrationRepository {
+  name: string
+  source: string
+  action: 'create' | 'skip'
+  format: string
+  type: string
+  reason: string
+  state?: MigrationRepositoryState
+  existed?: boolean
+  copied: number
+  present: number
+  failed: number
+  copyingAssets: boolean
+}
+
+export interface MigrationStatus {
+  state: MigrationState
+  source: string
+  startedAt: number
+  finishedAt: number
+  current: string
+  message: string
+  repositories: MigrationRepository[]
+  errors: string[]
+}
+
+export interface MigrationPreview {
+  repositories: MigrationRepository[]
+}
+
+export interface MigrationRequest {
+  url: string
+  username: string
+  password: string
+  visibility: Visibility
+  rawFormat: RepositoryFormat
+}
+
 export interface User {
   id: string
   email: string
