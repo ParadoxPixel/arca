@@ -4,6 +4,7 @@ const (
 	Maven2 = "maven2"
 	NPM    = "npm"
 	P2     = "p2"
+	Docker = "docker"
 )
 
 type Coordinates struct {
