@@ -16,8 +16,11 @@ import (
 )
 
 var (
-	ErrInvalidKey = errors.New("blob: key escapes the storage root")
-	ErrTooLarge   = errors.New("blob: payload exceeds the configured limit")
+	ErrInvalidKey      = errors.New("blob: key escapes the storage root")
+	ErrTooLarge        = errors.New("blob: payload exceeds the configured limit")
+	ErrNoSuchUpload    = errors.New("blob: there is no upload session with that id")
+	ErrDigestMismatch  = errors.New("blob: the upload does not match the digest it was committed with")
+	ErrInvalidUploadID = errors.New("blob: the upload id is not one this store issues")
 )
 
 const temporaryDirectory = ".uploads"
@@ -27,6 +30,33 @@ type Digests struct {
 	SHA1   string
 	SHA256 string
 	SHA512 string
+}
+
+// digesters computes every checksum an asset row carries in one pass. Upload
+// sessions hash a file that is already on disk, so this is shared rather than
+// inlined into Put.
+type digesters struct {
+	md5    hash.Hash
+	sha1   hash.Hash
+	sha256 hash.Hash
+	sha512 hash.Hash
+}
+
+func newDigesters() digesters {
+	return digesters{md5: md5.New(), sha1: sha1.New(), sha256: sha256.New(), sha512: sha512.New()}
+}
+
+func (d digesters) writer() io.Writer {
+	return io.MultiWriter(d.md5, d.sha1, d.sha256, d.sha512)
+}
+
+func (d digesters) digests() Digests {
+	return Digests{
+		MD5:    hex.EncodeToString(d.md5.Sum(nil)),
+		SHA1:   hex.EncodeToString(d.sha1.Sum(nil)),
+		SHA256: hex.EncodeToString(d.sha256.Sum(nil)),
+		SHA512: hex.EncodeToString(d.sha512.Sum(nil)),
+	}
 }
 
 type Store struct {
@@ -71,24 +101,14 @@ func (s *Store) Put(key string, reader io.Reader, limit int64) (int64, Digests, 
 		os.Remove(temporary.Name())
 	}()
 
-	digesters := map[string]hash.Hash{
-		"md5":    md5.New(),
-		"sha1":   sha1.New(),
-		"sha256": sha256.New(),
-		"sha512": sha512.New(),
-	}
-
-	writers := []io.Writer{temporary}
-	for _, digester := range digesters {
-		writers = append(writers, digester)
-	}
+	hashes := newDigesters()
 
 	source := reader
 	if limit > 0 {
 		source = io.LimitReader(reader, limit+1)
 	}
 
-	size, err := io.Copy(io.MultiWriter(writers...), source)
+	size, err := io.Copy(io.MultiWriter(temporary, hashes.writer()), source)
 	if err != nil {
 		return 0, Digests{}, fmt.Errorf("buffer upload: %w", err)
 	}
@@ -106,13 +126,7 @@ func (s *Store) Put(key string, reader io.Reader, limit int64) (int64, Digests, 
 		return 0, Digests{}, fmt.Errorf("store upload: %w", err)
 	}
 
-	digests := Digests{
-		MD5:    hex.EncodeToString(digesters["md5"].Sum(nil)),
-		SHA1:   hex.EncodeToString(digesters["sha1"].Sum(nil)),
-		SHA256: hex.EncodeToString(digesters["sha256"].Sum(nil)),
-		SHA512: hex.EncodeToString(digesters["sha512"].Sum(nil)),
-	}
-	return size, digests, nil
+	return size, hashes.digests(), nil
 }
 
 func (s *Store) Open(key string) (*os.File, os.FileInfo, error) {
@@ -132,6 +146,29 @@ func (s *Store) Open(key string) (*os.File, os.FileInfo, error) {
 		return nil, nil, err
 	}
 	return file, info, nil
+}
+
+// SizeOf totals the named files, so a sweep can report how much it reclaimed. A key
+// that has already gone contributes nothing rather than failing the measurement.
+func (s *Store) SizeOf(keys []string) (int64, error) {
+	var total int64
+
+	for _, key := range keys {
+		target, err := s.resolve(key)
+		if err != nil {
+			return total, err
+		}
+
+		info, err := os.Stat(target)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return total, err
+		}
+		total += info.Size()
+	}
+	return total, nil
 }
 
 func (s *Store) Delete(keys ...string) error {

@@ -206,6 +206,7 @@ function CreateRepositoryDialog() {
   const isGroup = type === 'group'
   const isNPM = format === 'npm'
   const isP2 = format === 'p2'
+  const isDocker = format === 'docker'
 
   const existing = useQuery({
     queryKey: ['repositories'],
@@ -267,7 +268,9 @@ function CreateRepositoryDialog() {
           <DialogHeader>
             <DialogTitle>New repository</DialogTitle>
             <DialogDescription>
-              {isNPM ? 'npm registry' : 'Maven 2 layout'}, served at /repository/{name || 'name'}
+              {isDocker
+                ? `Docker registry, pulled as ${window.location.host}/${name || 'name'}/<image>`
+                : `${isNPM ? 'npm registry' : isP2 ? 'p2 update site' : 'Maven 2 layout'}, served at /repository/${name || 'name'}`}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
@@ -289,6 +292,7 @@ function CreateRepositoryDialog() {
                 <option value="maven2">Maven 2, jars and poms</option>
                 <option value="npm">npm, packages and tarballs</option>
                 <option value="p2">p2, Eclipse bundles and features</option>
+                <option value="docker">Docker, images and OCI artifacts</option>
               </Select>
             </Field>
             <Field label="Type">
@@ -319,7 +323,9 @@ function CreateRepositoryDialog() {
                       ? 'The registry base URL this repository mirrors.'
                       : isP2
                         ? 'The host root to mirror, without a path. Update sites point at children above their own directory, which only resolves from the root.'
-                        : 'The Maven 2 base URL this repository mirrors.'
+                        : isDocker
+                          ? 'The registry to pull through. Docker Hub needs no path.'
+                          : 'The Maven 2 base URL this repository mirrors.'
                   }
                 >
                   <Input
@@ -330,7 +336,9 @@ function CreateRepositoryDialog() {
                         ? 'https://registry.npmjs.org'
                         : isP2
                           ? 'https://download.eclipse.org'
-                          : 'https://repo1.maven.org/maven2'
+                          : isDocker
+                            ? 'https://registry-1.docker.io'
+                            : 'https://repo1.maven.org/maven2'
                     }
                     className="font-mono"
                   />
@@ -627,9 +635,13 @@ function SettingsDialog({ repository }: { repository: Repository }) {
                   className="mt-0.5"
                 />
                 <span>
-                  Allow overwriting existing releases
+                  {repository.format === 'docker'
+                    ? 'Allow tags to be moved to another image'
+                    : 'Allow overwriting existing releases'}
                   <span className="mt-0.5 block text-xs text-muted-foreground">
-                    Off by default so a published version can never change underneath a build.
+                    {repository.format === 'docker'
+                      ? 'Normal Docker practice, since a tag like latest is meant to move. Turn it off to make every tag here permanent.'
+                      : 'Off by default so a published version can never change underneath a build.'}
                   </span>
                 </span>
               </label>

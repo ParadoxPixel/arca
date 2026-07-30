@@ -16,10 +16,13 @@ import {
   type MigrationRepository,
   type MigrationRequest,
   type MigrationStatus,
+  type DockerReindexReport,
+  type DockerSweepReport,
   type RepositoryFormat,
   type Visibility,
 } from '@/lib/api'
 import { useSession } from '@/lib/session'
+import { formatBytes } from '@/lib/utils'
 
 const emptyForm: MigrationRequest = {
   url: '',
@@ -109,6 +112,7 @@ function Progress({ entry }: { entry: MigrationRepository }) {
       {entry.copied} copied
       {entry.present > 0 ? `, ${entry.present} already present` : ''}
       {entry.failed > 0 ? `, ${entry.failed} failed` : ''}
+      {entry.untranslatable > 0 ? `, ${entry.untranslatable} not applicable here` : ''}
     </span>
   )
 }
@@ -119,14 +123,18 @@ function RunSummary({ status }: { status: MigrationStatus }) {
       copied: sum.copied + entry.copied,
       present: sum.present + entry.present,
       failed: sum.failed + entry.failed,
+      untranslatable: sum.untranslatable + entry.untranslatable,
     }),
-    { copied: 0, present: 0, failed: 0 },
+    { copied: 0, present: 0, failed: 0, untranslatable: 0 },
   )
 
   return (
     <p className="text-sm text-muted-foreground">
       {totals.copied} files copied, {totals.present} already present
       {totals.failed > 0 ? `, ${totals.failed} failed` : ''}
+      {totals.untranslatable > 0
+        ? `, ${totals.untranslatable} paths this server has no place for`
+        : ''}
       {status.current ? `, currently slurping ${status.current}...` : ''}
     </p>
   )
@@ -321,6 +329,157 @@ function statusVariant(state: MigrationStatus['state']) {
   return 'neutral' as const
 }
 
+// A docker repository is the one format that cannot reclaim space on delete: a tag's
+// layers are shared, so removing one leaves them behind on purpose. This is where
+// that decision gets revisited.
+function DockerSweepCard() {
+  const client = useQueryClient()
+  const [report, setReport] = useState<DockerSweepReport | null>(null)
+  const [swept, setSwept] = useState(false)
+  const [reindexed, setReindexed] = useState<DockerReindexReport | null>(null)
+
+  const repositories = useQuery({
+    queryKey: ['repositories'],
+    queryFn: () => api<{ repositories: Array<{ format: RepositoryFormat }> }>('/repositories'),
+  })
+
+  const preview = useMutation({
+    mutationFn: () => api<DockerSweepReport>('/admin/docker/sweep'),
+    onSuccess: (result) => {
+      setReport(result)
+      setSwept(false)
+    },
+  })
+
+  // Rebuilding reads every stored manifest afresh. It repairs a migration that was
+  // interrupted, or one run before this server knew how to index, without recopying.
+  const reindex = useMutation({
+    mutationFn: () => post<DockerReindexReport>('/admin/docker/reindex'),
+    onSuccess: (result) => setReindexed(result),
+  })
+
+  const sweep = useMutation({
+    mutationFn: () => post<DockerSweepReport>('/admin/docker/sweep'),
+    onSuccess: (result) => {
+      setReport(result)
+      setSwept(true)
+      client.invalidateQueries({ queryKey: ['repositories'] })
+    },
+  })
+
+  const hasDocker = (repositories.data?.repositories ?? []).some(
+    (entry) => entry.format === 'docker',
+  )
+  if (repositories.isLoading || !hasDocker) return null
+
+  const entries = (report?.repositories ?? []).filter(
+    (entry) => entry.blobs > 0 || entry.manifests > 0,
+  )
+  const error = (preview.error ?? sweep.error ?? reindex.error) as ApiError | null
+
+  return (
+    <Card className="p-6">
+      <CardHeader className="p-0">
+        <CardTitle>Docker housekeeping</CardTitle>
+        <CardDescription>
+          Reclaiming removes layers and untagged manifests no tag can reach any more. A
+          layer shared with another tag is kept, which is why deleting a tag reclaims less
+          than its size; it also runs on its own every few hours. Rebuilding metadata
+          re-reads every stored manifest, which repairs a migration that stopped halfway.
+        </CardDescription>
+      </CardHeader>
+
+      <div className="mt-5 space-y-4">
+        {error ? <ErrorBlock message={error.message} /> : null}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => preview.mutate()}
+            disabled={preview.isPending || sweep.isPending || reindex.isPending}
+          >
+            {preview.isPending ? <Spinner /> : null}
+            Check what can go
+          </Button>
+          {report && !swept && entries.length > 0 ? (
+            <Button type="button" onClick={() => sweep.mutate()} disabled={sweep.isPending}>
+              {sweep.isPending ? <Spinner /> : null}
+              Reclaim it
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => reindex.mutate()}
+            disabled={reindex.isPending || sweep.isPending}
+          >
+            {reindex.isPending ? <Spinner /> : null}
+            Rebuild metadata
+          </Button>
+        </div>
+
+        {reindexed ? (
+          <p className="text-sm text-muted-foreground">
+            Read {reindexed.repositories.reduce((sum, entry) => sum + entry.manifests, 0)} manifests
+            {reindexed.repositories.some((entry) => entry.failed > 0)
+              ? `, ${reindexed.repositories.reduce((sum, entry) => sum + entry.failed, 0)} could not be read`
+              : ''}
+            .
+          </p>
+        ) : null}
+
+        {report ? (
+          entries.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nothing to reclaim. Every layer and manifest here is still reachable from a
+              tag.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                {swept
+                  ? 'Reclaimed.'
+                  : 'Nothing has been removed yet.'}
+              </p>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Repository</TableHead>
+                      <TableHead className="w-28">Layers</TableHead>
+                      <TableHead className="w-32">Manifests</TableHead>
+                      {swept ? <TableHead className="w-28">Reclaimed</TableHead> : null}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {entries.map((entry) => (
+                      <TableRow key={entry.repository}>
+                        <TableCell className="font-mono text-[13px]">{entry.repository}</TableCell>
+                        <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">
+                          {entry.blobs}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">
+                          {entry.manifests}
+                        </TableCell>
+                        {swept ? (
+                          <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">
+                            {formatBytes(entry.bytes)}
+                          </TableCell>
+                        ) : null}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )
+        ) : null}
+      </div>
+    </Card>
+  )
+}
+
 export function AdminMaintenanceRoute() {
   const { user } = useSession()
   if (user?.role !== 'admin') return <ErrorBlock message="Administrator access required" />
@@ -333,6 +492,7 @@ export function AdminMaintenanceRoute() {
         description="One-off operations on this instance."
       />
       <MigrationCard />
+      <DockerSweepCard />
     </>
   )
 }

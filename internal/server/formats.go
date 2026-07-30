@@ -1,6 +1,7 @@
 package server
 
 import (
+	"arca/internal/docker"
 	"arca/internal/format"
 	"arca/internal/maven"
 	"arca/internal/npm"
@@ -20,6 +21,8 @@ func layoutForFormat(name string) format.Layout {
 		return npm.Layout{}
 	case format.P2:
 		return p2.Layout{}
+	case format.Docker:
+		return docker.Layout{}
 	default:
 		return maven.Layout{}
 	}

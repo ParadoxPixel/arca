@@ -33,6 +33,24 @@ type Decision struct {
 	Reason     string
 }
 
+// TranslatePath maps a source path onto the layout this server stores. Most formats
+// store what Nexus stored, so the default is the path unchanged; docker addresses its
+// content entirely differently at both ends.
+func (d Decision) TranslatePath(path string) (string, bool) {
+	if d.Format == format.Docker {
+		return DockerPath(path)
+	}
+	return path, true
+}
+
+// CopyComponents reports whether the source's component listing has to be walked as
+// well as its assets. Only docker needs it, and it needs it badly: the asset list names
+// no tags at all, so assets alone copy every byte of every image and leave none of them
+// pullable.
+func (d Decision) CopyComponents() bool {
+	return d.CopyAssets && d.Format == format.Docker
+}
+
 func (d Decision) Name() string       { return d.Target }
 func (d Decision) SourceName() string { return d.Source.Name }
 
@@ -94,10 +112,7 @@ func decide(repository nexus.Repository, options Options) Decision {
 	// Membership is not migrated: arca groups exist only for p2, and which
 	// members a group should carry is a decision worth making by hand.
 	if repository.IsGroup() {
-		decision.Reason = fmt.Sprintf(
-			"groups are not migrated; recreate it as a p2 group, or point clients at the members directly (%s)",
-			strings.Join(repository.Members(), ", "),
-		)
+		decision.Reason = groupReason(repository)
 		return decision
 	}
 
@@ -131,12 +146,29 @@ func decide(repository nexus.Repository, options Options) Decision {
 	return decision
 }
 
+// groupReason explains a skipped group. The member list is often unavailable: the
+// repository endpoint returns empty attributes on some Nexus versions, so claiming a
+// group has no members would be worse than saying they could not be read.
+func groupReason(repository nexus.Repository) string {
+	members := repository.Members()
+	if len(members) == 0 {
+		return "groups are not migrated, and this Nexus did not report which repositories this one " +
+			"contains; recreate it by hand, or point clients at the members directly"
+	}
+	return fmt.Sprintf(
+		"groups are not migrated; recreate it as a p2 group, or point clients at the members directly (%s)",
+		strings.Join(members, ", "),
+	)
+}
+
 func formatFor(nexusFormat string, options Options) (string, bool) {
 	switch nexusFormat {
 	case "maven2":
 		return format.Maven2, true
 	case "npm":
 		return format.NPM, true
+	case "docker":
+		return format.Docker, true
 	case "raw":
 		return options.rawFormat(), true
 	default:
@@ -146,7 +178,15 @@ func formatFor(nexusFormat string, options Options) (string, bool) {
 
 // policyFor carries a Maven repository's version policy across. Nexus has no
 // equivalent for the other formats, which take arca's default.
+//
+// Docker is the exception: its tags carry arbitrary suffixes, and real ones like
+// 0.1.9-swaggerui-staging are neither a release nor a prerelease by any rule worth
+// writing, so a mixed policy is the only honest choice.
 func policyFor(repository nexus.Repository) string {
+	if repository.Format == "docker" {
+		return models.PolicyMixed
+	}
+
 	switch strings.ToUpper(repository.VersionPolicy()) {
 	case "SNAPSHOT":
 		return models.PolicySnapshot

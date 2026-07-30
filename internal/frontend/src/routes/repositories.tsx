@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Globe, Lock } from 'lucide-react'
 import { PolicyBadge } from '@/components/ui/badge'
+import { FormatIcon } from '@/components/ui/format-icon'
 import { Card } from '@/components/ui/card'
 import { EmptyState, ErrorBlock, LoadingBlock, PageHeading } from '@/components/ui/feedback'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -32,8 +33,9 @@ function RepositoryTable({ repositories }: { repositories: Repository[] }) {
               <TableCell className="py-3">
                 <Link
                   to={`/repositories/${repository.name}`}
-                  className="whitespace-nowrap font-mono text-sm font-medium text-foreground hover:text-primary"
+                  className="flex items-center gap-2 whitespace-nowrap font-mono text-sm font-medium text-foreground hover:text-primary"
                 >
+                  <FormatIcon format={repository.format} className="text-muted-foreground" />
                   {repository.name}
                 </Link>
                 {repository.description ? (

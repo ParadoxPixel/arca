@@ -15,6 +15,10 @@ const (
 	SettingLogoType      = "logo_type"
 	SettingLogoUpdatedAt = "logo_updated_at"
 	SettingInitialized   = "initialized"
+	// SettingDockerRepository names the repository a bare image reference resolves
+	// to, so "docker pull host/nginx" works without the repository prefix that
+	// name-based routing otherwise requires.
+	SettingDockerRepository = "docker_repository"
 
 	DefaultInstanceName = "arca"
 	DefaultThemeColor   = "#4f46e5"

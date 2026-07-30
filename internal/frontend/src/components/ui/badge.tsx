@@ -1,6 +1,7 @@
 import type * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import type { RepositoryFormat } from '@/lib/api'
+import { FormatIcon } from '@/components/ui/format-icon'
 import { formatLabel } from '@/lib/coordinates'
 import { cn } from '@/lib/utils'
 
@@ -34,7 +35,10 @@ export function TypeBadge({ type }: { type: string }) {
 
 export function FormatBadge({ format }: { format: RepositoryFormat }) {
   return (
-    <Badge variant={format === 'maven2' ? 'neutral' : 'primary'}>{formatLabel(format)}</Badge>
+    <Badge variant={format === 'maven2' ? 'neutral' : 'primary'}>
+      <FormatIcon format={format} className="size-3" />
+      {formatLabel(format)}
+    </Badge>
   )
 }
 

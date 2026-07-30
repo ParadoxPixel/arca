@@ -47,6 +47,14 @@ func (s *Store) MarkAssetRefreshed(id string, expiresAt int64, etag, lastModifie
 	}).Error
 }
 
+// SetAssetContentType corrects what a cache fill recorded. A docker manifest's media
+// type is content rather than presentation, since a client negotiates on it, and the
+// filename it is stored under cannot tell an image manifest from an index.
+func (s *Store) SetAssetContentType(id, contentType string) error {
+	return s.db.Model(&models.Asset{}).Where("id = ?", id).
+		UpdateColumn("content_type", contentType).Error
+}
+
 func (s *Store) MarkAssetAccessed(id string) error {
 	return s.db.Model(&models.Asset{}).Where("id = ?", id).
 		UpdateColumn("last_accessed_at", NowMillis()).Error
@@ -66,6 +74,12 @@ func underPrefix(prefix string) assetSelection {
 			return query
 		}
 		return query.Where("path >= ? AND path < ?", bounds.Lower, bounds.Upper)
+	}
+}
+
+func atPaths(paths []string) assetSelection {
+	return func(query *gorm.DB) *gorm.DB {
+		return query.Where("path IN ?", paths)
 	}
 }
 
@@ -93,6 +107,15 @@ func (s *Store) DeleteIdleAssets(repositoryID string, cutoff int64) ([]string, e
 
 func (s *Store) DeleteAssetTree(repositoryID, prefix string) ([]string, error) {
 	return s.deleteAssets(repositoryID, underPrefix(prefix))
+}
+
+// DeleteAssetsAt removes a named set of paths, which is what a sweep produces: the
+// files it decided are unreachable rather than everything under one prefix.
+func (s *Store) DeleteAssetsAt(repositoryID string, paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	return s.deleteAssets(repositoryID, atPaths(paths))
 }
 
 func (s *Store) deleteAssets(repositoryID string, selection assetSelection) ([]string, error) {

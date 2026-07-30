@@ -44,7 +44,7 @@ func (s *Server) plan(ctx context.Context, body migrationRequest) ([]migrate.Dec
 		}
 	}
 	if body.RawFormat != "" {
-		if _, err := requireOneOf(body.RawFormat, formats, "rawFormat"); err != nil {
+		if _, err := requireOneOf(body.RawFormat, rawFormats, "rawFormat"); err != nil {
 			return nil, err
 		}
 	}
@@ -174,6 +174,53 @@ func (s *Server) runMigration(ctx context.Context, cancel context.CancelFunc, ru
 		s.migration.finish(MigrationDone, "")
 		log.Info("migration finished")
 	}
+}
+
+// routeDockerSweepPreview reports what a sweep would reclaim without touching
+// anything, so an administrator can see the number before agreeing to it.
+func (s *Server) routeDockerSweepPreview(writer http.ResponseWriter, request *http.Request) error {
+	if _, err := requireAdmin(request); err != nil {
+		return err
+	}
+
+	results, err := s.sweepDockerRepositories(false)
+	if err != nil {
+		return err
+	}
+
+	writeJSON(writer, http.StatusOK, map[string]any{"repositories": results})
+	return nil
+}
+
+func (s *Server) routeDockerSweep(writer http.ResponseWriter, request *http.Request) error {
+	if _, err := requireAdmin(request); err != nil {
+		return err
+	}
+
+	results, err := s.sweepDockerRepositories(true)
+	if err != nil {
+		return err
+	}
+
+	writeJSON(writer, http.StatusOK, map[string]any{"repositories": results})
+	return nil
+}
+
+// routeDockerReindex rebuilds the parsed metadata of every docker repository. It
+// repairs a migration that was interrupted, or one run before this server knew how to
+// index, without recopying a byte.
+func (s *Server) routeDockerReindex(writer http.ResponseWriter, request *http.Request) error {
+	if _, err := requireAdmin(request); err != nil {
+		return err
+	}
+
+	results, err := s.reindexDockerRepositories()
+	if err != nil {
+		return err
+	}
+
+	writeJSON(writer, http.StatusOK, map[string]any{"repositories": results})
+	return nil
 }
 
 func (s *Server) routeCancelMigration(writer http.ResponseWriter, request *http.Request) error {

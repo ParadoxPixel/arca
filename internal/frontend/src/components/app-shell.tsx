@@ -35,6 +35,7 @@ import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { useRefreshSession, useSession } from '@/lib/session'
 import { api, post, type Repository } from '@/lib/api'
+import { FormatIcon } from '@/components/ui/format-icon'
 import { categoriesQuery, groupRepositories, needsHeadings } from '@/lib/categories'
 import { cn } from '@/lib/utils'
 
@@ -156,6 +157,7 @@ function RailContent({ onNavigate = () => {} }: { onNavigate?: () => void }) {
             >
               {group.repositories.map((repository) => (
                 <RailLink key={repository.id} to={`/repositories/${repository.name}`}>
+                  <FormatIcon format={repository.format} className="text-faint" />
                   <span className="flex-1 truncate font-mono text-[13px]">{repository.name}</span>
                   {repository.visibility === 'public' ? (
                     <Globe className="size-3.5 shrink-0 text-faint" aria-label="Public" />
@@ -184,12 +186,12 @@ function RailContent({ onNavigate = () => {} }: { onNavigate?: () => void }) {
           ) : null}
         </div>
 
-        <div className="mx-3 rounded-2xl bg-tint px-4 py-3.5 text-tint-foreground">
-          <p className="text-xs font-medium opacity-80">Repository endpoint</p>
-          <p className="mt-1 break-all font-mono text-[11px] opacity-70">
-            {window.location.origin}/repository/
-          </p>
-        </div>
+        {/*<div className="mx-3 rounded-2xl bg-tint px-4 py-3.5 text-tint-foreground">*/}
+        {/*  <p className="text-xs font-medium opacity-80">Repository endpoint</p>*/}
+        {/*  <p className="mt-1 break-all font-mono text-[11px] opacity-70">*/}
+        {/*    {window.location.origin}/repository/*/}
+        {/*  </p>*/}
+        {/*</div>*/}
 
         <BuildStamp />
       </div>
@@ -212,15 +214,16 @@ function BuildStamp() {
     .join('\n')
 
   return (
-    <p
+    <a
       title={tooltip || undefined}
       className="mx-3 mb-4 mt-2 px-1 font-mono text-[11px] text-faint"
+      href={"https://github.com/pixelib/arca"}
     >
       Arca {build.version}
       {built && !Number.isNaN(built.valueOf())
         ? ` · ${built.toISOString().slice(0, 10)}`
         : null}
-    </p>
+    </a>
   )
 }
 

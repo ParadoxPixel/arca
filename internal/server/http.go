@@ -50,6 +50,7 @@ func (s *Server) routes() {
 	api.Handle("/repositories/{name}/artifacts", handler(s.routeDeleteArtifact)).Methods(http.MethodDelete)
 	api.Handle("/repositories/{name}/artifacts/files", handler(s.routeArtifactFiles)).Methods(http.MethodGet)
 	api.Handle("/repositories/{name}/recent", handler(s.routeRecent)).Methods(http.MethodGet)
+	api.Handle("/repositories/{name}/docker/manifests", handler(s.routeDockerManifest)).Methods(http.MethodGet)
 	api.Handle("/search", handler(s.routeSearch)).Methods(http.MethodGet)
 
 	api.Handle("/admin/health", handler(s.routeHealth)).Methods(http.MethodGet)
@@ -66,6 +67,10 @@ func (s *Server) routes() {
 	api.Handle("/admin/migration", handler(s.routeCancelMigration)).Methods(http.MethodDelete)
 	api.Handle("/admin/migration/preview", handler(s.routeMigrationPreview)).Methods(http.MethodPost)
 
+	api.Handle("/admin/docker/sweep", handler(s.routeDockerSweepPreview)).Methods(http.MethodGet)
+	api.Handle("/admin/docker/sweep", handler(s.routeDockerSweep)).Methods(http.MethodPost)
+	api.Handle("/admin/docker/reindex", handler(s.routeDockerReindex)).Methods(http.MethodPost)
+
 	api.PathPrefix("/").HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "Not found"})
 	})
@@ -73,6 +78,16 @@ func (s *Server) routes() {
 	repositoryMethods := []string{http.MethodGet, http.MethodHead, http.MethodPut, http.MethodPost, http.MethodDelete}
 	s.router.Handle("/repository/{repository}", http.HandlerFunc(s.handleRepository)).Methods(repositoryMethods...)
 	s.router.PathPrefix("/repository/{repository}/").HandlerFunc(s.handleRepository).Methods(repositoryMethods...)
+
+	// The registry API lives at the host root because a Docker client builds its
+	// URLs from the image reference and cannot be pointed at a path prefix. PATCH
+	// appears here and nowhere else: it is how a chunked blob push appends.
+	registryMethods := []string{
+		http.MethodGet, http.MethodHead, http.MethodPost,
+		http.MethodPut, http.MethodPatch, http.MethodDelete,
+	}
+	s.router.Handle("/v2", http.HandlerFunc(s.handleDockerRegistry)).Methods(registryMethods...)
+	s.router.PathPrefix("/v2/").HandlerFunc(s.handleDockerRegistry).Methods(registryMethods...)
 
 	s.mountFrontend()
 }

@@ -55,8 +55,12 @@ func TestPlanDecides(t *testing.T) {
 			action: ActionSkip, reason: "maven-central, maven-snapshots",
 		},
 		{
-			name: "an unsupported format is skipped", source: repository("docker-hosted", "docker", "hosted"),
-			action: ActionSkip, reason: "no docker format",
+			name: "an unsupported format is skipped", source: repository("gems", "rubygems", "hosted"),
+			action: ActionSkip, reason: "no rubygems format",
+		},
+		{
+			name: "a docker repository carries across", source: repository("docker", "docker", "hosted"),
+			action: ActionCreate, wantFormat: "docker", wantType: "hosted", copies: true,
 		},
 		{
 			name: "a proxy without an upstream is skipped", source: orphan,
