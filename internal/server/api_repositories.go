@@ -21,7 +21,11 @@ var (
 	visibilities    = []string{models.VisibilityPublic, models.VisibilityPrivate}
 	permissions     = []string{models.PermissionRead, models.PermissionWrite, models.PermissionAdmin}
 	repositoryTypes = []string{models.TypeHosted, models.TypeProxy, models.TypeGroup}
-	formats         = []string{format.Maven2, format.NPM, format.P2}
+	formats         = []string{format.Maven2, format.NPM, format.P2, format.Docker}
+	// rawFormats are what a Nexus raw repository may be migrated into. Docker is
+	// absent on purpose: raw holds loose files, while docker content only means
+	// anything at the paths the registry API defines, so the mapping cannot exist.
+	rawFormats = []string{format.Maven2, format.NPM, format.P2}
 )
 
 type repositoryResponse struct {

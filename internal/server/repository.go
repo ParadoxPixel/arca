@@ -44,6 +44,8 @@ func (s *Server) handleRepository(writer http.ResponseWriter, request *http.Requ
 		s.serveNPM(writer, request, repository, path)
 	case format.P2:
 		s.serveP2(writer, request, repository, path)
+	case format.Docker:
+		s.serveDockerBrowse(writer, request, repository, path)
 	default:
 		s.serveMaven(writer, request, repository, path)
 	}
@@ -89,7 +91,15 @@ func (s *Server) writeAsset(writer http.ResponseWriter, request *http.Request, a
 }
 
 type uploadDetails struct {
-	UploadedBy         *string
+	UploadedBy *string
+	// ContentType wins over what the layout derives from the filename. A docker
+	// manifest is the case that needs it: the same filename holds an OCI
+	// manifest, a Docker one or an index, and only the push says which.
+	ContentType string
+	// Limit overrides the configured upload ceiling: zero takes MaxUploadBytes and
+	// a negative value lifts the limit entirely, which is what a container layer
+	// needs since it is routinely larger than any sane ceiling for an artifact.
+	Limit              int64
 	FetchedAt          int64
 	ExpiresAt          int64
 	LastAccessedAt     int64
@@ -103,7 +113,15 @@ func (s *Server) storeUpload(repository *models.Repository, path string, body io
 	layout := layoutFor(repository)
 	key := repository.ID + "/" + path
 
-	size, digests, err := s.blobs.Put(key, body, s.config.MaxUploadBytes)
+	limit := s.config.MaxUploadBytes
+	switch {
+	case details.Limit < 0:
+		limit = 0
+	case details.Limit > 0:
+		limit = details.Limit
+	}
+
+	size, digests, err := s.blobs.Put(key, body, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -127,13 +145,18 @@ func (s *Server) storeUpload(repository *models.Repository, path string, body io
 
 	segments := strings.Split(path, "/")
 
+	contentType := details.ContentType
+	if contentType == "" {
+		contentType = layout.ContentType(segments[len(segments)-1])
+	}
+
 	asset := &models.Asset{
 		RepositoryID:       repository.ID,
 		ComponentID:        componentID,
 		Path:               path,
 		StorageKey:         key,
 		Size:               size,
-		ContentType:        layout.ContentType(segments[len(segments)-1]),
+		ContentType:        contentType,
 		MD5:                digests.MD5,
 		SHA1:               digests.SHA1,
 		SHA256:             digests.SHA256,

@@ -98,6 +98,9 @@ func (s *Store) migrate() error {
 		&models.Asset{},
 		&models.RemoteMiss{},
 		&models.TrafficEvent{},
+		&models.DockerUpload{},
+		&models.DockerManifest{},
+		&models.DockerReference{},
 	)
 }
 

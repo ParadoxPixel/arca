@@ -68,7 +68,7 @@ func TestMigrationPreviewWritesNothing(t *testing.T) {
 		`"format":"p2"`,
 		`"action":"create"`,
 		`"action":"skip"`,
-		"arca has no docker format",
+		"arca has no rubygems format",
 	} {
 		if !strings.Contains(body, expected) {
 			t.Errorf("the preview is missing %s: %s", expected, body)
@@ -125,8 +125,8 @@ func TestMigrationRunsInTheBackground(t *testing.T) {
 		if entry := byName["maven-public"]; !strings.Contains(entry.Reason, "group") {
 			t.Fatalf("maven-public = %+v", entry)
 		}
-		if entry := byName["docker-hosted"]; entry.State != repositorySkipped {
-			t.Fatalf("docker-hosted = %+v", entry)
+		if entry := byName["gems"]; entry.State != repositorySkipped {
+			t.Fatalf("gems = %+v", entry)
 		}
 	})
 

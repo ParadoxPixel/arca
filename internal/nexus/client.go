@@ -80,9 +80,23 @@ type Asset struct {
 	} `json:"checksum"`
 }
 
-type assetPage struct {
-	Items             []Asset `json:"items"`
-	ContinuationToken string  `json:"continuationToken"`
+// Component is one versioned thing, with its assets nested. For docker this is the
+// only endpoint that names tags at all: the asset list reports manifests by digest and
+// nothing else, so a migration driven off assets alone copies every byte and produces
+// no tags.
+type Component struct {
+	ID         string  `json:"id"`
+	Group      string  `json:"group"`
+	Name       string  `json:"name"`
+	Version    string  `json:"version"`
+	Repository string  `json:"repository"`
+	Format     string  `json:"format"`
+	Assets     []Asset `json:"assets"`
+}
+
+type page[T any] struct {
+	Items             []T    `json:"items"`
+	ContinuationToken string `json:"continuationToken"`
 }
 
 func (c *Client) get(ctx context.Context, path string, query url.Values) (*http.Response, error) {
@@ -135,6 +149,17 @@ func (c *Client) Repositories(ctx context.Context) ([]Repository, error) {
 // Nexus pages with. The callback runs per page so a large repository never has
 // to be held in memory at once.
 func (c *Client) Assets(ctx context.Context, repository string, visit func([]Asset) error) error {
+	return walk(ctx, c, "/service/rest/v1/assets", repository, "assets", visit)
+}
+
+// Components walks the same repository grouped by version. Both walks are needed for
+// docker, whose two endpoints expose disjoint views: assets hold the blobs and the
+// digest-addressed manifests, components hold the tags.
+func (c *Client) Components(ctx context.Context, repository string, visit func([]Component) error) error {
+	return walk(ctx, c, "/service/rest/v1/components", repository, "components", visit)
+}
+
+func walk[T any](ctx context.Context, c *Client, path, repository, subject string, visit func([]T) error) error {
 	token := ""
 
 	for {
@@ -143,25 +168,25 @@ func (c *Client) Assets(ctx context.Context, repository string, visit func([]Ass
 			query.Set("continuationToken", token)
 		}
 
-		response, err := c.get(ctx, "/service/rest/v1/assets", query)
+		response, err := c.get(ctx, path, query)
 		if err != nil {
 			return err
 		}
 
-		var page assetPage
-		err = json.NewDecoder(response.Body).Decode(&page)
+		var current page[T]
+		err = json.NewDecoder(response.Body).Decode(&current)
 		response.Body.Close()
 		if err != nil {
-			return fmt.Errorf("nexus: reading assets of %s: %w", repository, err)
+			return fmt.Errorf("nexus: reading %s of %s: %w", subject, repository, err)
 		}
 
-		if err := visit(page.Items); err != nil {
+		if err := visit(current.Items); err != nil {
 			return err
 		}
-		if page.ContinuationToken == "" {
+		if current.ContinuationToken == "" {
 			return nil
 		}
-		token = page.ContinuationToken
+		token = current.ContinuationToken
 	}
 }
 

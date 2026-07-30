@@ -30,18 +30,19 @@ const (
 )
 
 type migrationRepository struct {
-	Name          string `json:"name"`
-	Source        string `json:"source"`
-	Action        string `json:"action"`
-	Format        string `json:"format"`
-	Type          string `json:"type"`
-	Reason        string `json:"reason"`
-	State         string `json:"state"`
-	Existed       bool   `json:"existed"`
-	Copied        int    `json:"copied"`
-	Present       int    `json:"present"`
-	Failed        int    `json:"failed"`
-	CopyingAssets bool   `json:"copyingAssets"`
+	Name           string `json:"name"`
+	Source         string `json:"source"`
+	Action         string `json:"action"`
+	Format         string `json:"format"`
+	Type           string `json:"type"`
+	Reason         string `json:"reason"`
+	State          string `json:"state"`
+	Existed        bool   `json:"existed"`
+	Copied         int    `json:"copied"`
+	Present        int    `json:"present"`
+	Failed         int    `json:"failed"`
+	Untranslatable int    `json:"untranslatable"`
+	CopyingAssets  bool   `json:"copyingAssets"`
 }
 
 type migrationStatus struct {
@@ -195,6 +196,7 @@ func (m *migrationRun) record(results []migrate.Result) {
 		m.update(result.Decision.Name(), func(entry *migrationRepository) {
 			entry.Existed = result.Existed
 			entry.Copied, entry.Present, entry.Failed = result.Copied, result.Skipped, result.Failed
+			entry.Untranslatable = result.Untranslatable
 			entry.State = repositoryDone
 			if result.Failed > 0 {
 				entry.State = repositoryFailed
@@ -276,6 +278,29 @@ func (d *localDestination) PutAsset(_ context.Context, repository, path string, 
 
 	_, err = d.server.storeUpload(stored, path, body, uploadDetails{})
 	return err
+}
+
+// Settled builds the metadata a format cannot index as its files arrive. Only docker
+// needs it, and only after every blob is present: a manifest's platform and labels come
+// from a config blob the copy order gives no guarantee of having seen yet.
+func (d *localDestination) Settled(_ context.Context, decision migrate.Decision) error {
+	if decision.Format != format.Docker {
+		return nil
+	}
+
+	stored, err := d.repository(decision.Name())
+	if err != nil {
+		return err
+	}
+
+	result, err := d.server.reindexDockerRepository(stored)
+	if err != nil {
+		return err
+	}
+	if result.Failed > 0 {
+		return fmt.Errorf("%d of %d manifests could not be indexed", result.Failed, result.Failed+result.Manifests)
+	}
+	return nil
 }
 
 func sanitizeSource(url string) string { return strings.TrimSpace(url) }

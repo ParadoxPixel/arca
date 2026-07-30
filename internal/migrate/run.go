@@ -22,6 +22,10 @@ type Destination interface {
 	CreateRepository(ctx context.Context, decision Decision, visibility string) error
 	HasAsset(ctx context.Context, repository, path string) (bool, error)
 	PutAsset(ctx context.Context, repository, path string, size int64, body io.Reader) error
+	// Settled runs once a repository's content is all in place, for a format whose
+	// metadata cannot be built as the files arrive. Docker needs it: a manifest
+	// references blobs that the copy order gives no guarantee of having seen yet.
+	Settled(ctx context.Context, decision Decision) error
 }
 
 // Result records what happened to one repository.
@@ -32,7 +36,10 @@ type Result struct {
 	Copied   int
 	Skipped  int
 	Failed   int
-	Errors   []string
+	// Untranslatable counts source paths this server has no place for. Reporting them
+	// is what stops a copy claiming to be complete when it silently dropped content.
+	Untranslatable int
+	Errors         []string
 }
 
 type Reporter interface {
@@ -95,6 +102,17 @@ func (r *Runner) applyOne(ctx context.Context, decision Decision) Result {
 	}
 
 	r.copyAssets(ctx, decision, &result)
+	if decision.CopyComponents() {
+		r.copyComponents(ctx, decision, &result)
+	}
+
+	// Settling comes last for the same reason it exists: only now is every blob a
+	// manifest might reference actually present.
+	if err := r.Target.Settled(ctx, decision); err != nil {
+		result.Failed++
+		result.Errors = append(result.Errors, "building metadata: "+err.Error())
+	}
+
 	return result
 }
 
@@ -114,24 +132,12 @@ func (r *Runner) copyAssets(ctx context.Context, decision Decision, result *Resu
 			go func() {
 				defer workers.Done()
 				for asset := range queue {
-					copied, err := r.copyAsset(ctx, decision.Name(), asset)
+					// The transfer happens outside the lock. Holding it across a
+					// download would serialise the pool this exists to parallelise.
+					copied, err := r.copyAsset(ctx, decision, asset)
 
 					mutex.Lock()
-					switch {
-					case err != nil:
-						result.Failed++
-						result.Errors = append(result.Errors, asset.Path+": "+err.Error())
-						if r.Reporter != nil {
-							r.Reporter.Problem(decision.Name(), asset.Path, err)
-						}
-					case copied:
-						result.Copied++
-					default:
-						result.Skipped++
-					}
-					if r.Reporter != nil {
-						r.Reporter.Progress(decision.Name(), result.Copied, result.Skipped, result.Failed)
-					}
+					r.record(decision, asset, copied, err, result)
 					mutex.Unlock()
 				}
 			}()
@@ -152,10 +158,71 @@ func (r *Runner) copyAssets(ctx context.Context, decision Decision, result *Resu
 	}
 }
 
+// copyComponents walks the source grouped by version. It exists for docker, whose tags
+// appear in no other listing, and it copies only the assets the asset walk could not
+// have seen.
+func (r *Runner) copyComponents(ctx context.Context, decision Decision, result *Result) {
+	err := r.Source.Components(ctx, decision.SourceName(), func(page []nexus.Component) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		for _, component := range page {
+			for _, asset := range component.Assets {
+				r.recordCopy(ctx, decision, asset, result)
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		result.Failed++
+		result.Errors = append(result.Errors, err.Error())
+	}
+}
+
+// recordCopy transfers one asset and books the outcome. Only the components walk uses
+// it, which runs on one goroutine, so it needs no lock of its own.
+func (r *Runner) recordCopy(ctx context.Context, decision Decision, asset nexus.Asset, result *Result) {
+	copied, err := r.copyAsset(ctx, decision, asset)
+	r.record(decision, asset, copied, err, result)
+}
+
+// record books one outcome. Callers hold whatever lock the result needs.
+func (r *Runner) record(decision Decision, asset nexus.Asset, copied bool, err error, result *Result) {
+	switch {
+	case errors.Is(err, errUntranslatable):
+		result.Untranslatable++
+	case err != nil:
+		result.Failed++
+		result.Errors = append(result.Errors, asset.Path+": "+err.Error())
+		if r.Reporter != nil {
+			r.Reporter.Problem(decision.Name(), asset.Path, err)
+		}
+	case copied:
+		result.Copied++
+	default:
+		result.Skipped++
+	}
+
+	if r.Reporter != nil {
+		r.Reporter.Progress(decision.Name(), result.Copied, result.Skipped, result.Failed)
+	}
+}
+
+var errUntranslatable = errors.New("migrate: this server has no place for that path")
+
 // copyAsset reports whether anything was transferred. An asset already in arca
 // is left alone so a rerun costs one HEAD instead of a download.
-func (r *Runner) copyAsset(ctx context.Context, repository string, asset nexus.Asset) (bool, error) {
-	present, err := r.Target.HasAsset(ctx, repository, asset.Path)
+func (r *Runner) copyAsset(ctx context.Context, decision Decision, asset nexus.Asset) (bool, error) {
+	path, ok := decision.TranslatePath(asset.Path)
+	if !ok {
+		return false, errUntranslatable
+	}
+
+	repository := decision.Name()
+
+	present, err := r.Target.HasAsset(ctx, repository, path)
 	if err != nil {
 		return false, err
 	}
@@ -169,7 +236,7 @@ func (r *Runner) copyAsset(ctx context.Context, repository string, asset nexus.A
 	}
 	defer body.Close()
 
-	if err := r.Target.PutAsset(ctx, repository, asset.Path, asset.FileSize, body); err != nil {
+	if err := r.Target.PutAsset(ctx, repository, path, asset.FileSize, body); err != nil {
 		return false, err
 	}
 	return true, nil

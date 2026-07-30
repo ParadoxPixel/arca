@@ -13,13 +13,18 @@ const (
 )
 
 type Config struct {
-	DevMode        bool
-	Port           int
-	DatabasePath   string
-	StorageDir     string
+	DevMode      bool
+	Port         int
+	DatabasePath string
+	StorageDir   string
+
 	MaxUploadBytes int64
-	ProxyTimeout   time.Duration
-	ViteURL        string
+	// MaxBlobBytes limits a container layer, which routinely runs past whatever
+	// is a sane ceiling for a jar or a tarball. Zero means unlimited.
+	MaxBlobBytes int64
+
+	ProxyTimeout time.Duration
+	ViteURL      string
 }
 
 func Parse(arguments []string) (Config, error) {
@@ -34,6 +39,7 @@ func Parse(arguments []string) (Config, error) {
 	flags.StringVar(&config.DatabasePath, "db", envString("DATABASE_PATH", "./data/arca.db"), "path to the SQLite database file")
 	flags.StringVar(&config.StorageDir, "storage", envString("STORAGE_DIR", "./data/storage"), "directory holding uploaded artifacts")
 	flags.Int64Var(&config.MaxUploadBytes, "max-upload", envInt64("MAX_UPLOAD_BYTES", DefaultMaxUploadBytes), "largest artifact accepted, in bytes")
+	flags.Int64Var(&config.MaxBlobBytes, "max-blob", envInt64("MAX_BLOB_BYTES", 0), "largest container image layer accepted, in bytes, or 0 for no limit")
 	flags.StringVar(&config.ViteURL, "vite-url", envString("VITE_URL", "http://localhost:5173"), "vite dev server to proxy in dev mode")
 
 	if err := flags.Parse(arguments); err != nil {
@@ -41,6 +47,9 @@ func Parse(arguments []string) (Config, error) {
 	}
 	if config.MaxUploadBytes <= 0 {
 		config.MaxUploadBytes = DefaultMaxUploadBytes
+	}
+	if config.MaxBlobBytes < 0 {
+		config.MaxBlobBytes = 0
 	}
 
 	config.ProxyTimeout = time.Duration(proxyTimeoutSeconds) * time.Second

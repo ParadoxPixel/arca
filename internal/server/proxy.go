@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/log"
 
 	"arca/internal/blob"
+	"arca/internal/docker"
 	"arca/internal/format"
 	"arca/internal/maven"
 	"arca/internal/proxy"
@@ -53,6 +54,15 @@ type proxyFetch struct {
 	// packument rewrite this one does not depend on the request, so it runs once
 	// on the way in and the stored digests describe what is actually served.
 	Rewrite func(document []byte) ([]byte, error)
+	// Indexed runs after a fetched asset is stored, for a format that keeps parsed
+	// metadata beside the bytes and wants a cache fill to build it too.
+	Indexed func(asset *models.Asset) error
+	// Headers adds response headers derived from the cached row. Docker needs the
+	// manifest digest, which is the asset's own SHA256 and so is not known until the
+	// row is resolved, whether that was from the cache or from the remote.
+	Headers func(asset *models.Asset) map[string]string
+	// Limit overrides the upload ceiling, as a container layer needs.
+	Limit int64
 }
 
 func pathFetch(path string) proxyFetch {
@@ -79,7 +89,7 @@ func (s *Server) serveProxyFetch(writer http.ResponseWriter, request *http.Reque
 			return
 		}
 
-		if s.serveCachedAsset(writer, request, repository, asset) {
+		if s.serveCachedAsset(writer, request, repository, fetch, asset) {
 			return
 		}
 	}
@@ -126,8 +136,14 @@ func (s *Server) proxyAsset(repository *models.Repository, fetch proxyFetch) (*m
 // file has gone missing is dropped rather than left to answer every future
 // request with a 404: eviction removes rows before files, so a fetch that lands
 // in that window can outlive its own blob.
-func (s *Server) serveCachedAsset(writer http.ResponseWriter, request *http.Request, repository *models.Repository, asset *models.Asset) bool {
+func (s *Server) serveCachedAsset(writer http.ResponseWriter, request *http.Request, repository *models.Repository, fetch proxyFetch, asset *models.Asset) bool {
 	s.recordCacheHit(request, repository, asset)
+
+	if fetch.Headers != nil {
+		for name, value := range fetch.Headers(asset) {
+			writer.Header().Set(name, value)
+		}
+	}
 
 	if s.writeAsset(writer, request, asset) {
 		return true
@@ -162,6 +178,11 @@ func (s *Server) dropDanglingAsset(asset *models.Asset) {
 // artifact is already cached is answered from that copy, which keeps clients
 // that insist on one working against upstreams that publish only some of them.
 func (s *Server) serveProxyMiss(writer http.ResponseWriter, repository *models.Repository, path string) {
+	if repository.Format == format.Docker {
+		dockerError(writer, http.StatusNotFound, docker.ErrorManifestUnknown, "The remote does not have this")
+		return
+	}
+
 	base, checksum := maven.SplitChecksum(path)
 	if checksum != "" {
 		if parent, err := s.store.FindAsset(repository.ID, base); err == nil {
@@ -244,7 +265,8 @@ func (s *Server) storeRemoteAsset(repository *models.Repository, fetch proxyFetc
 		body = rewritten
 	}
 
-	_, err := s.storeUpload(repository, fetch.CachePath, body, uploadDetails{
+	asset, err := s.storeUpload(repository, fetch.CachePath, body, uploadDetails{
+		Limit:              fetch.Limit,
 		FetchedAt:          now,
 		ExpiresAt:          cacheExpiry(layoutFor(repository), repository, fetch.CachePath),
 		LastAccessedAt:     now,
@@ -256,6 +278,14 @@ func (s *Server) storeRemoteAsset(repository *models.Repository, fetch proxyFetc
 	}
 	if err != nil {
 		return err
+	}
+
+	// Indexing failure is logged rather than failing the fetch: the bytes are cached
+	// and servable, and a missing index only costs the UI its detail view.
+	if fetch.Indexed != nil {
+		if err := fetch.Indexed(asset); err != nil {
+			log.Errorf("indexing the cached %s/%s failed: %v", repository.Name, fetch.CachePath, err)
+		}
 	}
 
 	return s.store.ClearRemoteMiss(repository.ID, fetch.CachePath)

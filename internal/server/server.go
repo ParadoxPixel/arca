@@ -133,6 +133,8 @@ func (s *Server) runMaintenance() {
 			log.Infof("removed %d expired upstream misses", removed)
 		}
 
+		s.purgeStaleDockerUploads(time.Now())
+		s.purgeUnreachableDockerContent(time.Now())
 		s.purgeIdleCaches(time.Now())
 	}
 }
