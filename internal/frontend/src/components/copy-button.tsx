@@ -66,7 +66,7 @@ export function StackedCoordinate({
   namespace: string
   name: string
 }) {
-  const scope = format === 'npm' ? (namespace ? `@${namespace}` : '') : namespace
+  const scope = format === 'npm' && namespace ? `@${namespace}` : namespace
 
   return (
     <>
@@ -91,13 +91,17 @@ export function Coordinate({
   version?: string | null
   className?: string
 }) {
-  const npm = format === 'npm'
+  // npm and docker fold the namespace into the name with a separator of their own,
+  // while Maven and p2 keep it as a distinct field joined by a colon.
+  const inlineNamespace = format === 'npm' || format === 'docker'
+  const prefix = format === 'npm' ? `@${namespace}/` : `${namespace}/`
+  const versionSeparator = format === 'npm' ? '@' : ':'
 
   return (
     <span className={cn('font-mono', className)}>
-      {npm ? (
+      {inlineNamespace ? (
         namespace ? (
-          <span className="text-muted-foreground">@{namespace}/</span>
+          <span className="text-muted-foreground">{prefix}</span>
         ) : null
       ) : (
         <>
@@ -108,7 +112,7 @@ export function Coordinate({
       <span className="font-medium text-foreground">{name}</span>
       {version ? (
         <>
-          <span className="text-faint">{npm ? '@' : ':'}</span>
+          <span className="text-faint">{versionSeparator}</span>
           <span className="text-primary">{version}</span>
         </>
       ) : null}

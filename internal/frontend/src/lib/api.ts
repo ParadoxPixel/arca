@@ -63,7 +63,7 @@ export type Permission = 'read' | 'write' | 'admin'
 export type Policy = 'release' | 'snapshot' | 'mixed'
 export type Visibility = 'public' | 'private'
 export type RepositoryType = 'hosted' | 'proxy' | 'group'
-export type RepositoryFormat = 'maven2' | 'npm' | 'p2'
+export type RepositoryFormat = 'maven2' | 'npm' | 'p2' | 'docker'
 
 export type MigrationState = 'idle' | 'running' | 'done' | 'cancelled' | 'failed'
 export type MigrationRepositoryState = 'pending' | 'running' | 'done' | 'failed' | 'skipped'
@@ -80,6 +80,7 @@ export interface MigrationRepository {
   copied: number
   present: number
   failed: number
+  untranslatable: number
   copyingAssets: boolean
 }
 
@@ -199,6 +200,90 @@ export interface ArtifactDetail {
   latest: string | null
   release: string | null
   versions: Array<{ version: string; isSnapshot: boolean; updatedAt: number; createdAt: number }>
+}
+
+export interface DockerLayer {
+  digest: string
+  short: string
+  mediaType: string
+  size: number
+  position: number
+  sharedWith: number
+  foreign: boolean
+  urls: string[]
+  stored: boolean
+}
+
+export interface DockerChild {
+  digest: string
+  short: string
+  mediaType: string
+  platform: string
+  size: number
+  totalSize: number
+  os: string
+  architecture: string
+  variant: string
+  layerCount: number
+  indexed: boolean
+  referenceType: string
+}
+
+export interface DockerHistoryStep {
+  created: number
+  createdBy: string
+  comment: string
+  emptyLayer: boolean
+}
+
+export interface DockerConfig {
+  digest: string
+  size: number
+  user: string
+  workingDir: string
+  entrypoint: string[]
+  cmd: string[]
+  env: string[]
+  exposedPorts: string[]
+  history: DockerHistoryStep[]
+}
+
+export interface DockerManifest {
+  repository: string
+  namespace: string
+  name: string
+  image: string
+  reference: string
+  digest: string
+  short: string
+  mediaType: string
+  size: number
+  totalSize: number
+  layerCount: number
+  isIndex: boolean
+  os: string
+  architecture: string
+  variant: string
+  imageCreated: number
+  labels: Record<string, string>
+  annotations: Record<string, string>
+  layers: DockerLayer[]
+  children: DockerChild[]
+  config: DockerConfig | null
+  pullBy: { tag: string; digest: string }
+}
+
+export interface DockerReindexReport {
+  repositories: Array<{ repository: string; manifests: number; failed: number }>
+}
+
+export interface DockerSweepReport {
+  repositories: Array<{
+    repository: string
+    blobs: number
+    manifests: number
+    bytes: number
+  }>
 }
 
 export interface ApiToken {

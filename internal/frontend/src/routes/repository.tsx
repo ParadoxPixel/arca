@@ -11,6 +11,7 @@ import { Coordinate, CopyButton } from '@/components/copy-button'
 import { MavenUsage } from '@/components/snippets/maven'
 import { NPMUsage } from '@/components/snippets/npm'
 import { P2Usage } from '@/components/snippets/p2'
+import { DockerUsage } from '@/components/snippets/docker'
 import {
   api,
   type ArtifactSummary,
@@ -88,9 +89,11 @@ function Browser({
       <EmptyState
         title="Nothing published yet"
         description={
-          format === 'npm'
-            ? 'Run npm publish against this registry and the tree appears here immediately.'
-            : 'Deploy with Maven and the tree appears here immediately.'
+          format === 'docker'
+            ? 'Push an image and the stored tree appears here: one directory per image and a shared blob store beside it.'
+            : format === 'npm'
+              ? 'Run npm publish against this registry and the tree appears here immediately.'
+              : 'Deploy with Maven and the tree appears here immediately.'
         }
       />
     )
@@ -191,16 +194,22 @@ function Overview({
   if (artifacts.length === 0) {
     return isProxy ? (
       <EmptyState
-        title="No artifacts cached yet"
-        description="Point a build at this repository and the artifacts it resolves are cached here. The Usage tab has the exact configuration."
+        title={format === 'docker' ? 'No images cached yet' : 'No artifacts cached yet'}
+        description={
+          format === 'docker'
+            ? 'Pull through this repository and every image it resolves is cached here. The Usage tab has the exact reference to pull.'
+            : 'Point a build at this repository and the artifacts it resolves are cached here. The Usage tab has the exact configuration.'
+        }
       />
     ) : (
       <EmptyState
-        title="No artifacts published yet"
+        title={format === 'docker' ? 'No images pushed yet' : 'No artifacts published yet'}
         description={
-          format === 'npm'
-            ? 'Point an npm publish at this registry to get started. The Usage tab has the exact configuration.'
-            : 'Point a Maven deploy at this repository to get started. The Usage tab has the exact configuration.'
+          format === 'docker'
+            ? 'Run docker push against this repository to get started. The Usage tab has the exact reference to tag with.'
+            : format === 'npm'
+              ? 'Point an npm publish at this registry to get started. The Usage tab has the exact configuration.'
+              : 'Point a Maven deploy at this repository to get started. The Usage tab has the exact configuration.'
         }
       />
     )
@@ -211,9 +220,9 @@ function Overview({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Artifact</TableHead>
+            <TableHead>{format === 'docker' ? 'Image' : 'Artifact'}</TableHead>
             <TableHead className="w-44">Latest</TableHead>
-            <TableHead className="w-24">Versions</TableHead>
+            <TableHead className="w-24">{format === 'docker' ? 'Tags' : 'Versions'}</TableHead>
             <TableHead className="w-36">Updated</TableHead>
           </TableRow>
         </TableHeader>
@@ -251,7 +260,21 @@ function Overview({
 function Usage({ repository }: { repository: RepositoryDetail }) {
   if (repository.format === 'npm') return <NPMUsage repository={repository} />
   if (repository.format === 'p2') return <P2Usage repository={repository} />
+  if (repository.format === 'docker') return <DockerUsage repository={repository} />
   return <MavenUsage repository={repository} />
+}
+
+// dockerOrDefault keeps the stat labels honest per format without three nested
+// ternaries at each call site.
+function dockerOrDefault(
+  isDocker: boolean,
+  isProxy: boolean,
+  docker: string,
+  proxy: string,
+  hosted: string,
+): string {
+  if (isDocker) return docker
+  return isProxy ? proxy : hosted
 }
 
 export function RepositoryRoute() {
@@ -268,7 +291,12 @@ export function RepositoryRoute() {
   if (error) return <ErrorBlock message={(error as Error).message} />
   if (!data) return null
 
-  const endpoint = `${window.location.origin}/repository/${data.name}`
+  const docker = data.format === 'docker'
+  // A Docker client builds its own URLs from the image reference, so the thing to
+  // copy is the host and repository prefix, not the path the other formats serve on.
+  const endpoint = docker
+    ? `${window.location.host}/${data.name}/`
+    : `${window.location.origin}/repository/${data.name}`
 
   return (
     <>
@@ -300,6 +328,17 @@ export function RepositoryRoute() {
           <CopyButton value={endpoint} className="shrink-0 hover:bg-card/60" />
         </div>
 
+        {docker ? (
+          <p className="text-sm text-muted-foreground">
+            Images are addressed as{' '}
+            <code className="font-mono text-[13px]">
+              {window.location.host}/{data.name}/&lt;image&gt;:&lt;tag&gt;
+            </code>
+            . The repository name is part of the reference, which is how one host serves
+            several repositories without a port or a hostname of its own.
+          </p>
+        ) : null}
+
         {data.type === 'proxy' ? (
           <p className="text-sm text-muted-foreground">
             Mirrors <code className="font-mono text-[13px]">{data.remoteUrl}</code>. Artifacts are
@@ -311,11 +350,14 @@ export function RepositoryRoute() {
         ) : null}
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Stat label={data.type === 'proxy' ? 'Cached artifacts' : 'Artifacts'} value={String(data.stats.components)} />
+          <Stat
+            label={dockerOrDefault(docker, data.type === 'proxy', 'Tags', 'Cached artifacts', 'Artifacts')}
+            value={String(data.stats.components)}
+          />
           <Stat label="Files" value={String(data.stats.assets)} />
           <Stat label="Storage" value={formatBytes(data.stats.bytes)} />
           <Stat
-            label={data.type === 'proxy' ? 'Last cached' : 'Last publish'}
+            label={dockerOrDefault(docker, data.type === 'proxy', 'Last push', 'Last cached', 'Last publish')}
             value={formatRelative(data.stats.updatedAt)}
           />
         </div>

@@ -11,14 +11,17 @@ import { CopyButton } from '@/components/copy-button'
 import { DeleteArtifactDialog } from '@/components/delete-artifact'
 import { MavenDependency, MavenSetup } from '@/components/snippets/maven'
 import { NPMDependency, NPMSetup } from '@/components/snippets/npm'
+import { DockerDependency, DockerUsage } from '@/components/snippets/docker'
+import { DockerManifestView } from '@/components/docker-manifest'
 import {
   api,
   type ArtifactDetail,
   type BrowseEntry,
+  type DockerManifest,
   type RepositoryDetail,
   type RepositoryFormat,
 } from '@/lib/api'
-import { coordinateLabel } from '@/lib/coordinates'
+import { coordinateLabel, packageLabel } from '@/lib/coordinates'
 import { cn, formatBytes, formatRelative, plural } from '@/lib/utils'
 
 function Files({
@@ -97,17 +100,33 @@ function Snippets({
   namespace,
   name,
   version,
+  digest,
 }: {
   format: RepositoryFormat
   repository: string
   namespace: string
   name: string
   version: string
+  digest?: string
 }) {
   const { data } = useQuery({
     queryKey: ['repository', repository],
     queryFn: () => api<RepositoryDetail>(`/repositories/${repository}`),
   })
+
+  if (format === 'docker') {
+    return (
+      <div className="space-y-7">
+        <DockerDependency
+          repository={repository}
+          image={packageLabel('docker', namespace, name)}
+          tag={version}
+          digest={digest}
+        />
+        {data ? <DockerUsage repository={data} /> : null}
+      </div>
+    )
+  }
 
   if (format === 'npm') {
     return (
@@ -150,15 +169,32 @@ export function ArtifactRoute() {
     enabled: name.length > 0,
   })
 
+  // The pull snippets want the manifest digest, and the manifest tab wants the whole
+  // record. They share a query key, so this costs one request rather than two.
+  const reference = selected ?? data?.versions[0]?.version ?? ''
+  const manifestQuery = new URLSearchParams({ namespace, name, reference })
+  const manifest = useQuery({
+    queryKey: ['docker-manifest', repository, namespace, name, reference],
+    queryFn: () =>
+      api<DockerManifest>(`/repositories/${repository}/docker/manifests?${manifestQuery}`),
+    enabled: data?.format === 'docker' && reference.length > 0,
+  })
+
   if (!name) return <ErrorBlock message="Missing name parameter" />
   if (isLoading) return <LoadingBlock label="Loading artifact" />
   if (error) return <ErrorBlock message={(error as Error).message} />
   if (!data) return null
 
-  const version = selected ?? data.versions[0]?.version ?? ''
+  const version = reference
   const format = data.format
-  const npm = format === 'npm'
+  const docker = format === 'docker'
   const coordinates = coordinateLabel(format, namespace, name, version)
+
+  // npm and docker both write the namespace into the name, so the heading is one
+  // line; Maven and p2 keep it above. The separator before a version differs again.
+  const inlineNamespace = format === 'npm' || docker
+  const namespacePrefix = format === 'npm' ? `@${namespace}/` : `${namespace}/`
+  const versionSeparator = format === 'npm' ? '@' : ':'
 
   return (
     <>
@@ -172,9 +208,9 @@ export function ArtifactRoute() {
         </Link>
 
         <div className="space-y-1">
-          {npm ? (
+          {inlineNamespace ? (
             <h1 className="font-mono text-4xl font-semibold">
-              {namespace ? <span className="text-muted-foreground">@{namespace}/</span> : null}
+              {namespace ? <span className="text-muted-foreground">{namespacePrefix}</span> : null}
               {name}
             </h1>
           ) : (
@@ -191,14 +227,16 @@ export function ArtifactRoute() {
           {data.latest && data.latest !== data.release ? (
             <Badge variant="snapshot">latest {data.latest}</Badge>
           ) : null}
-          <Badge variant="neutral">{plural(data.versions.length, 'version')}</Badge>
+          <Badge variant="neutral">
+            {plural(data.versions.length, docker ? 'tag' : 'version')}
+          </Badge>
         </div>
 
         <div className="flex items-center gap-3 rounded-2xl bg-tint py-2.5 pl-5 pr-2.5">
           <code className="min-w-0 flex-1 overflow-x-auto scrollbar-thin whitespace-nowrap font-mono text-[15px]">
-            {npm ? (
+            {inlineNamespace ? (
               namespace ? (
-                <span className="text-tint-foreground/70">@{namespace}/</span>
+                <span className="text-tint-foreground/70">{namespacePrefix}</span>
               ) : null
             ) : (
               <>
@@ -207,7 +245,7 @@ export function ArtifactRoute() {
               </>
             )}
             <span className="font-medium text-tint-foreground">{name}</span>
-            <span className="text-tint-foreground/40">{npm ? '@' : ':'}</span>
+            <span className="text-tint-foreground/40">{versionSeparator}</span>
             <span className="font-medium text-tint-foreground">{version}</span>
           </code>
           <CopyButton value={coordinates} className="shrink-0 hover:bg-card/60" />
@@ -216,7 +254,9 @@ export function ArtifactRoute() {
 
       <div className="grid gap-7 lg:grid-cols-[15rem_1fr]">
         <div className="space-y-2.5">
-          <p className="text-xs font-medium text-muted-foreground">Versions</p>
+          <p className="text-xs font-medium text-muted-foreground">
+            {docker ? 'Tags' : 'Versions'}
+          </p>
           <div className="max-h-[26rem] space-y-1 overflow-y-auto scrollbar-thin rounded-2xl bg-muted p-1.5">
             {data.versions.map((entry) => (
               <button
@@ -240,7 +280,8 @@ export function ArtifactRoute() {
             ))}
           </div>
           <p className="px-1 text-xs text-muted-foreground">
-            Published {formatRelative(data.versions.find((v) => v.version === version)?.updatedAt)}
+            {docker ? 'Pushed' : 'Published'}{' '}
+            {formatRelative(data.versions.find((v) => v.version === version)?.updatedAt)}
           </p>
 
           {detail.data?.permission === 'admin' ? (
@@ -275,8 +316,8 @@ export function ArtifactRoute() {
 
         <Tabs defaultValue="install">
           <TabsList>
-            <TabsTrigger value="install">Install</TabsTrigger>
-            <TabsTrigger value="files">Files</TabsTrigger>
+            <TabsTrigger value="install">{docker ? 'Pull' : 'Install'}</TabsTrigger>
+            <TabsTrigger value="files">{docker ? 'Manifest' : 'Files'}</TabsTrigger>
           </TabsList>
           <TabsContent value="install">
             <Snippets
@@ -285,15 +326,25 @@ export function ArtifactRoute() {
               namespace={namespace}
               name={name}
               version={version}
+              digest={manifest.data?.digest}
             />
           </TabsContent>
           <TabsContent value="files">
-            <Files
-              repository={repository}
-              namespace={namespace}
-              name={name}
-              version={version}
-            />
+            {docker ? (
+              <DockerManifestView
+                repository={repository}
+                namespace={namespace}
+                name={name}
+                reference={version}
+              />
+            ) : (
+              <Files
+                repository={repository}
+                namespace={namespace}
+                name={name}
+                version={version}
+              />
+            )}
           </TabsContent>
         </Tabs>
       </div>
