@@ -241,44 +241,72 @@ func TestAccepts(t *testing.T) {
 
 	cases := []struct {
 		name      string
-		accept    string
+		accept    []string
 		mediaType string
 		want      bool
 	}{
-		{name: "no header at all", accept: "", mediaType: MediaTypeOCIManifest, want: true},
-		{name: "blank header", accept: "   ", mediaType: MediaTypeOCIManifest, want: true},
-		{name: "an exact match", accept: MediaTypeOCIManifest, mediaType: MediaTypeOCIManifest, want: true},
-		{name: "a wildcard", accept: "*/*", mediaType: MediaTypeOCIManifest, want: true},
-		{name: "a type wildcard", accept: "application/*", mediaType: MediaTypeOCIManifest, want: true},
+		{name: "no header at all", accept: nil, mediaType: MediaTypeOCIManifest, want: true},
+		{name: "an empty header", accept: []string{""}, mediaType: MediaTypeOCIManifest, want: true},
+		{name: "blank header", accept: []string{"   "}, mediaType: MediaTypeOCIManifest, want: true},
+		{name: "an exact match", accept: []string{MediaTypeOCIManifest}, mediaType: MediaTypeOCIManifest, want: true},
+		{name: "a wildcard", accept: []string{"*/*"}, mediaType: MediaTypeOCIManifest, want: true},
+		{name: "a type wildcard", accept: []string{"application/*"}, mediaType: MediaTypeOCIManifest, want: true},
 
 		{
 			name:      "a modern client listing both encodings",
-			accept:    MediaTypeDockerManifest + ", " + dockerList + ", " + MediaTypeOCIManifest + ", " + MediaTypeOCIIndex,
+			accept:    []string{MediaTypeDockerManifest + ", " + dockerList + ", " + MediaTypeOCIManifest + ", " + MediaTypeOCIIndex},
 			mediaType: MediaTypeOCIManifest,
 			want:      true,
 		},
 		{
 			name:      "quality values are ignored",
-			accept:    MediaTypeOCIManifest + ";q=0.9",
+			accept:    []string{MediaTypeOCIManifest + ";q=0.9"},
 			mediaType: MediaTypeOCIManifest,
+			want:      true,
+		},
+
+		// The docker daemon sends one Accept line per media type, so the match can
+		// live in any of them and not only in the first.
+		{
+			name:      "a header per type with the index last",
+			accept:    []string{MediaTypeDockerManifest, dockerList, MediaTypeOCIManifest, MediaTypeOCIIndex},
+			mediaType: MediaTypeOCIIndex,
+			want:      true,
+		},
+		{
+			name:      "a header per type with the index first",
+			accept:    []string{MediaTypeOCIIndex, MediaTypeDockerManifest, dockerList},
+			mediaType: MediaTypeOCIIndex,
+			want:      true,
+		},
+		{
+			name:      "a header per type with a wildcard in a later line",
+			accept:    []string{MediaTypeDockerManifest, "*/*"},
+			mediaType: MediaTypeOCIIndex,
 			want:      true,
 		},
 
 		// A header that expressed no opinion about manifests is not grounds to
 		// refuse, which is what keeps an odd client working.
-		{name: "an unrelated type only", accept: "application/json", mediaType: MediaTypeOCIManifest, want: true},
-		{name: "an unrelated type and a wildcard", accept: "text/html, */*", mediaType: MediaTypeOCIIndex, want: true},
+		{name: "an unrelated type only", accept: []string{"application/json"}, mediaType: MediaTypeOCIManifest, want: true},
+		{name: "an unrelated type and a wildcard", accept: []string{"text/html, */*"}, mediaType: MediaTypeOCIIndex, want: true},
 
 		// Only a client that listed manifest types and left this one out is refused.
 		{
 			name:      "an old client that knows only the docker encoding",
-			accept:    MediaTypeDockerManifest + ", " + dockerList,
+			accept:    []string{MediaTypeDockerManifest + ", " + dockerList},
 			mediaType: MediaTypeOCIManifest,
 			want:      false,
 		},
 		{
+			name:      "an old client sending a header per type",
+			accept:    []string{MediaTypeDockerManifest, dockerList},
+			mediaType: MediaTypeOCIIndex,
+			want:      false,
+		},
+		{
 			name:      "an image manifest offered where an index is stored",
-			accept:    MediaTypeOCIManifest,
+			accept:    []string{MediaTypeOCIManifest},
 			mediaType: MediaTypeOCIIndex,
 			want:      false,
 		},

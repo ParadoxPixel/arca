@@ -199,25 +199,26 @@ func ParseManifest(document []byte) (Manifest, error) {
 // Docker and OCI encodings, since either would change the digest the manifest is
 // addressed by, so the only honest answers are the stored type or a 404.
 //
+// It takes every Accept line rather than one, because the docker daemon sends a
+// separate header per media type instead of a single comma separated list.
+//
 // It errs towards serving. A header that names no manifest type at all, or one
 // that wildcards, expresses no opinion worth refusing over, and only a client that
 // listed manifest types and excluded this one is turned away.
-func Accepts(accept, mediaType string) bool {
-	if strings.TrimSpace(accept) == "" {
-		return true
-	}
-
+func Accepts(accept []string, mediaType string) bool {
 	opinionated := false
-	for _, entry := range strings.Split(accept, ",") {
-		candidate := strings.TrimSpace(strings.SplitN(entry, ";", 2)[0])
+	for _, header := range accept {
+		for _, entry := range strings.Split(header, ",") {
+			candidate := strings.TrimSpace(strings.SplitN(entry, ";", 2)[0])
 
-		switch candidate {
-		case "", "*/*", "application/*":
-			return true
-		case mediaType:
-			return true
+			switch candidate {
+			case "", "*/*", "application/*":
+				return true
+			case mediaType:
+				return true
+			}
+			opinionated = opinionated || IsManifestMediaType(candidate)
 		}
-		opinionated = opinionated || IsManifestMediaType(candidate)
 	}
 	return !opinionated
 }

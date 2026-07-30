@@ -160,6 +160,56 @@ func (c *registryClient) pushImage(image, tag string) (manifestDigest string, la
 	return digestOf(manifest), layerDigest
 }
 
+// pushIndex stores one single-platform image and tags an index over it, which is
+// what "docker buildx push" produces even for a single architecture.
+func (c *registryClient) pushIndex(image, tag string) string {
+	c.instance.t.Helper()
+
+	config := []byte(testImageConfig)
+	layer := bytes.Repeat([]byte("layer-bytes"), 32)
+
+	configDigest := c.pushBlob(image, config)
+	layerDigest := c.pushBlob(image, layer)
+
+	child := imageManifestFor(configDigest, len(config), map[string]int{layerDigest: len(layer)})
+	expectStatus(c.instance.t, c.pushManifest(image, digestOf(child), child), http.StatusCreated)
+
+	index, err := json.Marshal(map[string]any{
+		"schemaVersion": 2,
+		"mediaType":     docker.MediaTypeOCIIndex,
+		"manifests": []map[string]any{{
+			"mediaType": docker.MediaTypeOCIManifest,
+			"digest":    digestOf(child),
+			"size":      len(child),
+			"platform":  map[string]any{"os": "linux", "architecture": "amd64"},
+		}},
+	})
+	if err != nil {
+		c.instance.t.Fatalf("building the index: %v", err)
+	}
+
+	expectStatus(c.instance.t,
+		c.do(http.MethodPut, "/v2/"+c.name(image)+"/manifests/"+tag, index, docker.MediaTypeOCIIndex),
+		http.StatusCreated)
+
+	return digestOf(index)
+}
+
+func (c *registryClient) pull(path string, accept ...string) *http.Response {
+	c.instance.t.Helper()
+
+	request, err := http.NewRequest(http.MethodGet, c.instance.server.URL+path, nil)
+	if err != nil {
+		c.instance.t.Fatalf("building a registry request: %v", err)
+	}
+	for _, value := range accept {
+		request.Header.Add("Accept", value)
+	}
+	request.SetBasicAuth(administratorEmail, administratorPassword)
+
+	return c.instance.do(request)
+}
+
 func TestDockerVersionCheck(t *testing.T) {
 	instance := newTestInstance(t)
 	instance.setup()
@@ -270,6 +320,58 @@ func TestDockerPushAndPull(t *testing.T) {
 			t.Fatalf("the format was not recorded: %s", body)
 		}
 	})
+}
+
+// TestDockerIndexPullAcceptHeaders covers the shapes an Accept header arrives in.
+// The docker daemon sends one line per media type rather than a single comma
+// separated list, so reading only the first line hid the index behind a 404.
+func TestDockerIndexPullAcceptHeaders(t *testing.T) {
+	instance := newTestInstance(t)
+	instance.setup()
+	registry := instance.registry("images")
+
+	indexDigest := registry.pushIndex("multi/app", "latest")
+
+	everyType := []string{
+		docker.MediaTypeDockerManifest,
+		docker.MediaTypeDockerList,
+		docker.MediaTypeOCIManifest,
+		docker.MediaTypeOCIIndex,
+	}
+
+	cases := []struct {
+		name   string
+		accept []string
+		want   int
+	}{
+		{name: "no accept header", accept: nil, want: http.StatusOK},
+		{name: "a wildcard", accept: []string{"*/*"}, want: http.StatusOK},
+		{name: "one line listing every type", accept: []string{strings.Join(everyType, ", ")}, want: http.StatusOK},
+		{name: "one header per type", accept: everyType, want: http.StatusOK},
+		{name: "one header per type with the index last", accept: everyType[1:], want: http.StatusOK},
+		{
+			name:   "a client that knows only the docker encodings",
+			accept: []string{docker.MediaTypeDockerManifest, docker.MediaTypeDockerList},
+			want:   http.StatusNotFound,
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			response := registry.pull("/v2/images/multi/app/manifests/latest", testCase.accept...)
+			expectStatus(t, response, testCase.want)
+
+			if testCase.want != http.StatusOK {
+				return
+			}
+			if got := response.Header.Get("Content-Type"); got != docker.MediaTypeOCIIndex {
+				t.Fatalf("Content-Type = %q, want %q", got, docker.MediaTypeOCIIndex)
+			}
+			if got := response.Header.Get(docker.ContentDigestHeader); got != indexDigest {
+				t.Fatalf("%s = %q, want %q", docker.ContentDigestHeader, got, indexDigest)
+			}
+		})
+	}
 }
 
 func TestDockerManifestRequiresItsBlobs(t *testing.T) {

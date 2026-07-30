@@ -54,9 +54,9 @@ func (s *Server) serveDockerManifestRead(writer http.ResponseWriter, request *ht
 	// A client that asked for manifest types and excluded the stored one is told
 	// the manifest is absent, which is the spec's answer and is what sends it on to
 	// another reference rather than leaving it to choke on a type it cannot read.
-	if accept := request.Header.Get("Accept"); !docker.Accepts(accept, asset.ContentType) {
+	if accept := request.Header.Values("Accept"); !docker.Accepts(accept, asset.ContentType) {
 		log.Warnf("%s/%s is stored as %s, which %q does not accept",
-			registry.repository.Name, registry.image, asset.ContentType, accept)
+			registry.repository.Name, registry.image, asset.ContentType, strings.Join(accept, ", "))
 		dockerError(writer, http.StatusNotFound, docker.ErrorManifestUnknown,
 			"This manifest is stored as "+asset.ContentType+", which the request does not accept")
 		return
