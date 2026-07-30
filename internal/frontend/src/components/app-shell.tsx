@@ -35,6 +35,7 @@ import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { useRefreshSession, useSession } from '@/lib/session'
 import { api, post, type Repository } from '@/lib/api'
+import { FormatIcon } from '@/components/ui/format-icon'
 import { categoriesQuery, groupRepositories, needsHeadings } from '@/lib/categories'
 import { cn } from '@/lib/utils'
 
@@ -156,6 +157,7 @@ function RailContent({ onNavigate = () => {} }: { onNavigate?: () => void }) {
             >
               {group.repositories.map((repository) => (
                 <RailLink key={repository.id} to={`/repositories/${repository.name}`}>
+                  <FormatIcon format={repository.format} className="text-faint" />
                   <span className="flex-1 truncate font-mono text-[13px]">{repository.name}</span>
                   {repository.visibility === 'public' ? (
                     <Globe className="size-3.5 shrink-0 text-faint" aria-label="Public" />
