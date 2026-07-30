@@ -3,15 +3,17 @@
 </p>
 
 # Arca [![Release](https://github.com/pixelib/arca/actions/workflows/release.yml/badge.svg)](https://github.com/pixelib/arca/actions/workflows/release.yml) [![CI](https://github.com/pixelib/arca/actions/workflows/ci.yml/badge.svg)](https://github.com/pixelib/arca/actions/workflows/ci.yml)
-A Maven, npm and Eclipse p2 repository server that runs as a single Go binary.
+A Maven, npm, Docker and Eclipse p2 repository server that runs as a single Go binary.
 
 ![Arca](docs/assets/img/repositories.jpg)
 
 Artifacts live on disk, metadata lives in SQLite, and the React UI is embedded in the binary. There
 is no separate database to run and no config file to write before the first start.
 
-- Maven 2 and npm repositories, hosted or proxying a remote
+- Maven 2, npm and Docker repositories, hosted or proxying a remote
 - Eclipse p2 update sites, hosted or proxied and cached, with composite groups for PDE and Tycho
+- Container images pushed and pulled with any Docker client, with layers, platforms and build history
+  in the UI
 - Release, prerelease and mixed version policies
 - Public repositories readable without an account, private ones granted per user
 - Generated `maven-metadata.xml` and npm packuments, built from the database
@@ -38,8 +40,8 @@ Open <http://localhost:8080> and complete the setup wizard. There is a
 
 ## Docs
 
-**[pixelib.github.io/arca](https://pixelib.github.io/arca)** covers using it from Maven
-and npm, deploying it, and running an installation.
+**[pixelib.github.io/arca](https://pixelib.github.io/arca)** covers using it from Maven,
+npm and Docker, deploying it, and running an installation.
 
 A live instance is at [repo.pixelib.dev](https://repo.pixelib.dev).
 
@@ -65,6 +67,7 @@ make test       # go tests plus a frontend typecheck
 | `internal/maven` | Maven coordinates, version ordering, metadata rendering |
 | `internal/npm` | npm routes, semver, packuments, publish parsing |
 | `internal/p2` | p2 paths, OSGi versions, artifact document rewriting |
+| `internal/docker` | image names, tags, digests, the storage layout and manifest parsing |
 | `internal/proxy` | upstream HTTP client and fetch deduplication |
 | `internal/blob` | artifact storage on disk |
 | `internal/frontend` | React app plus the `go:embed` handler |

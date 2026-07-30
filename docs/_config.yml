@@ -1,5 +1,5 @@
 title: Arca
-description: A Maven and npm repository server that runs as a single Go binary.
+description: A Maven, npm, Docker and Eclipse p2 repository server that runs as a single Go binary.
 url: https://pixelib.github.io
 baseurl: /arca
 
