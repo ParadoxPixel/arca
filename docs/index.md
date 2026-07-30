@@ -11,7 +11,7 @@ Eclipse p2, stores artifacts on disk, keeps metadata in SQLite, and serves an em
 the same process. There is no separate database to run, no application server, and no config file to write
 before the first start.
 
-![The repository index]({{ site.baseurl }}/assets/img/repositories.jpg)
+![The repository index]({{ site.baseurl }}/assets/img/repositories.png)
 
 ## What it does
 

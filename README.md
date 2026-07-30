@@ -5,7 +5,7 @@
 # Arca [![Release](https://github.com/pixelib/arca/actions/workflows/release.yml/badge.svg)](https://github.com/pixelib/arca/actions/workflows/release.yml) [![CI](https://github.com/pixelib/arca/actions/workflows/ci.yml/badge.svg)](https://github.com/pixelib/arca/actions/workflows/ci.yml)
 A Maven, npm, Docker and Eclipse p2 repository server that runs as a single Go binary.
 
-![Arca](docs/assets/img/repositories.jpg)
+![Arca](docs/assets/img/repositories.png)
 
 Artifacts live on disk, metadata lives in SQLite, and the React UI is embedded in the binary. There
 is no separate database to run and no config file to write before the first start.
