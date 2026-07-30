@@ -4,6 +4,8 @@ layout: default
 nav_order: 6
 ---
 
+![The docker inspect page]({{ site.baseurl }}/assets/img/docker.png)
+
 # Using it from Docker
 
 Create a repository with a format of `docker`. The format is fixed once the repository exists,

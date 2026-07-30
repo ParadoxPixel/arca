@@ -23,7 +23,7 @@ The quickest route. Images are published to the GitHub Container Registry on eve
 docker run -d --name arca \
   -p 8080:8080 \
   -v arca-data:/data \
-  ghcr.io/pixelib/arca:latest
+  repo.pixelib.dev/pixelib-docker/arca:latest
 ```
 
 Or with compose:
@@ -31,7 +31,7 @@ Or with compose:
 ```yaml
 services:
   arca:
-    image: ghcr.io/pixelib/arca:latest
+    image: repo.pixelib.dev/pixelib-docker/arca:latest
     restart: unless-stopped
     ports:
       - "8080:8080"
