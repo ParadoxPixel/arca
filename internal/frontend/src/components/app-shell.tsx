@@ -184,12 +184,12 @@ function RailContent({ onNavigate = () => {} }: { onNavigate?: () => void }) {
           ) : null}
         </div>
 
-        <div className="mx-3 rounded-2xl bg-tint px-4 py-3.5 text-tint-foreground">
-          <p className="text-xs font-medium opacity-80">Repository endpoint</p>
-          <p className="mt-1 break-all font-mono text-[11px] opacity-70">
-            {window.location.origin}/repository/
-          </p>
-        </div>
+        {/*<div className="mx-3 rounded-2xl bg-tint px-4 py-3.5 text-tint-foreground">*/}
+        {/*  <p className="text-xs font-medium opacity-80">Repository endpoint</p>*/}
+        {/*  <p className="mt-1 break-all font-mono text-[11px] opacity-70">*/}
+        {/*    {window.location.origin}/repository/*/}
+        {/*  </p>*/}
+        {/*</div>*/}
 
         <BuildStamp />
       </div>
@@ -212,15 +212,16 @@ function BuildStamp() {
     .join('\n')
 
   return (
-    <p
+    <a
       title={tooltip || undefined}
       className="mx-3 mb-4 mt-2 px-1 font-mono text-[11px] text-faint"
+      href={"https://github.com/pixelib/arca"}
     >
       Arca {build.version}
       {built && !Number.isNaN(built.valueOf())
         ? ` · ${built.toISOString().slice(0, 10)}`
         : null}
-    </p>
+    </a>
   )
 }
 
