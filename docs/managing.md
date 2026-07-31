@@ -24,6 +24,87 @@ Creating a repository asks for four things that cannot all be changed later:
 `allowRedeploy` lets a hosted Maven repository overwrite an existing release. It is off by default,
 and it does not apply to npm, where a published version is always immutable.
 
+## Renaming a repository
+
+The name is editable in the settings dialog. Renaming does not move anything on disk: artifacts are
+stored against the repository's identifier, so the rename is one column and a redirect.
+
+The old name is kept, and everything that still asks for it is answered with a redirect to the new
+one:
+
+```
+GET /repository/internal/dev/pixelib/app/39/app-39.jar
+301 Moved Permanently
+Location: /repository/pixelib-internal/dev/pixelib/app/39/app-39.jar
+```
+
+A read gets a `301`. A publish gets a `308`, which is the one redirect that keeps the method and the
+body rather than turning an upload into a `GET`. Maven, Gradle and npm all follow both, so a build
+pointed at the old URL keeps working while you update it. Docker is the exception: a client builds
+every URL of a pull or a push from the reference it was given, so a former name resolves in place
+there instead of redirecting.
+
+Renaming also carries the name across everything that referred to it: p2 group members that listed
+the repository as a child, and the default Docker repository if it was this one.
+
+Former names are listed under the name in the Repositories table and in the settings dialog, where
+each can be removed to free it. **A former name stops redirecting the moment another repository
+claims it.** The new repository owns the name outright; the redirect is not shadowing it and does
+not come back if that repository is later deleted.
+
+Old names live only as redirects. Nothing prunes them, so a repository that has been renamed a few
+times keeps answering to every name it ever had until you remove them.
+
+## Deployment links
+
+A deployment link is a fixed URL that downloads one file from the newest version of an artifact,
+**without authentication, whatever the repository's visibility.** It is how a private repository
+publishes exactly one file to something that has no credentials: an installer, a server that pulls
+its own plugins, a CI job in someone else's account.
+
+The problem it solves is that the filename carries the version:
+
+```
+/repository/pixelib-internal/dev/pixelib/pixelscript/pixelscript-paper/39/pixelscript-paper-39.jar
+```
+
+That URL breaks on the next release. A link names the artifact and a pattern instead, and resolves
+the file on every request:
+
+```
+https://repo.example.com/download/pixelscript-paper-latest
+```
+
+Links are managed per repository, from the link icon in the Repositories table or the Links tab on
+the repository page. A link is:
+
+| Field | What it does |
+| --- | --- |
+| Group ID and Artifact ID | the artifact to track, as the repository's format names it |
+| Pattern | which file of a version to serve |
+| Match | how to read the pattern, as a template or a regular expression |
+| Resolves to | releases, prereleases, or the latest of either |
+| Slug | the last segment of the URL, unique across the instance |
+| Download as | serve the file under a fixed name instead of the published one |
+
+A template is literal text with `{version}`, `{baseVersion}`, `{name}` and `{namespace}` filled in,
+plus `*` for anything else that varies. `{name}-{version}.jar` is the usual one. For anything a
+template cannot say, switch to a regular expression: it is matched against the whole filename, and
+placeholders are substituted into it quoted, so a version containing `.` or `+` cannot widen what
+the link matches.
+
+Resolution walks versions newest first and serves the first file that matches. It does not stop at
+the newest version, so a release that shipped without the file the link names does not break the
+link: it keeps serving the newest release that has one.
+
+The listing shows what each link currently resolves to, so a pattern that matches nothing is
+visible before someone follows it rather than after. A link can be disabled, which answers `404`
+without giving the URL up, and downloads through it are counted.
+
+The slug is the credential. It is the whole address, so treat it the way you would treat a token:
+anyone holding it can download that file, and nothing else about the repository is reachable
+through it.
+
 ## Proxy repositories
 
 ![A proxy repository]({{ site.baseurl }}/assets/img/proxy.jpg)

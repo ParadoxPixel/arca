@@ -88,6 +88,42 @@ repositories {
 A release repository refuses to overwrite an existing version unless `allowRedeploy` is set on it.
 Snapshot repositories accept redeployment by default.
 
+## Pulling the latest jar without credentials
+
+A build that resolves through Maven does not need this, but something that only wants one file often
+does: an installer, a server that pulls its own plugins, a job with no credentials to give. The
+direct URL is no good on its own, because the version is in the filename and so the URL breaks with
+every release.
+
+```
+https://repo.example.com/repository/pixelib-internal/dev/pixelib/pixelscript/pixelscript-paper/39/pixelscript-paper-39.jar
+```
+
+An administrator can create a [deployment link]({{ site.baseurl }}/managing#deployment-links) for
+the artifact, which resolves the version on every request and needs no authentication even when the
+repository is private:
+
+```sh
+curl -L -O https://repo.example.com/download/pixelscript-paper-latest
+```
+
+The response carries the version it resolved to, so a script can tell whether anything moved without
+downloading the file twice:
+
+```sh
+curl -sI https://repo.example.com/download/pixelscript-paper-latest | grep -i x-arca-version
+# X-Arca-Version: 39
+```
+
+The file is served under its published name unless the link sets one. Set **Download as** on the
+link when whatever consumes it wants a stable filename.
+
+## Renamed repositories
+
+If a repository has been renamed, its old URL answers with a redirect rather than a `404`. Maven and
+Gradle both follow it, so a build keeps resolving until you update the URL. Update it anyway: the
+old name stops redirecting the moment another repository claims it.
+
 ## Metadata and checksums
 
 `maven-metadata.xml` is generated from the database at both the artifact and the snapshot version

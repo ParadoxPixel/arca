@@ -164,6 +164,8 @@ export interface Repository {
   cacheRetentionDays: number
   createdAt: number
   permission: Permission | null
+  /** Former names that still redirect here, newest first. */
+  aliases: string[]
   components?: number
   updatedAt?: number
 }
@@ -171,6 +173,41 @@ export interface Repository {
 export interface RepositoryDetail extends Repository {
   stats: { components: number; assets: number; bytes: number; updatedAt: number }
   members?: string[]
+}
+
+export interface RepositoryAlias {
+  name: string
+  createdAt: number
+}
+
+export type MatchType = 'template' | 'regex'
+
+/** What a deployment link points at right now, or null when nothing matches. */
+export interface ResolvedFile {
+  version: string
+  filename: string
+  path: string
+  size: number
+  updatedAt: number
+}
+
+export interface DeploymentLink {
+  id: string
+  slug: string
+  url: string
+  repository: string
+  description: string
+  namespace: string
+  artifact: string
+  matchType: MatchType
+  pattern: string
+  policy: Policy
+  filename: string
+  disabled: boolean
+  downloads: number
+  lastUsedAt: number
+  createdAt: number
+  resolved: ResolvedFile | null
 }
 
 export interface BrowseEntry {

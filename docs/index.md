@@ -24,6 +24,11 @@ before the first start.
 - **Version policies.** A repository takes releases only, prereleases only, or both.
 - **Per user permissions.** Public repositories are readable without an account. Private ones are
   granted per user, per repository.
+- **Deployment links.** A fixed URL that always downloads the newest matching file of an artifact,
+  without authentication, so a private repository can publish exactly one file to an installer or a
+  build that has no credentials.
+- **Repositories can be renamed.** The old name keeps redirecting, until another repository claims
+  it.
 - **Generated metadata.** `maven-metadata.xml` and npm packuments are built from the database, so
   they cannot drift from what is actually stored.
 - **Container images as first-class artifacts.** Push and pull with any Docker client, then read the
