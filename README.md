@@ -16,6 +16,9 @@ is no separate database to run and no config file to write before the first star
   in the UI
 - Release, prerelease and mixed version policies
 - Public repositories readable without an account, private ones granted per user
+- Deployment links: a fixed URL that downloads the newest matching file of an artifact, without
+  authentication, even from a private repository
+- Repositories can be renamed, with the old name left redirecting until something else claims it
 - Generated `maven-metadata.xml` and npm packuments, built from the database
 - Traffic, storage and artifact management dashboards
 - A markdown welcome hero, an accent colour and a logo of your own on the landing page

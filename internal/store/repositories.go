@@ -31,7 +31,15 @@ func (s *Store) CreateRepository(repository *models.Repository) error {
 	if repository.Format == "" {
 		repository.Format = format.Maven2
 	}
-	return s.db.Create(repository).Error
+
+	// A repository that claims a name takes it back from whichever rename left
+	// it behind as an alias, which is what stops a redirect outliving its point.
+	return s.Transaction(func(tx *Store) error {
+		if err := tx.ReleaseAlias(repository.Name); err != nil {
+			return err
+		}
+		return tx.query().Create(repository).Error
+	})
 }
 
 func (s *Store) RepositoryByName(name string) (*models.Repository, error) {
@@ -184,7 +192,11 @@ func (s *Store) DeleteRepository(repositoryID string) ([]string, error) {
 			Pluck("storage_key", &keys).Error; err != nil {
 			return err
 		}
-		for _, model := range []any{&models.Asset{}, &models.Component{}, &models.DistTag{}, &models.Grant{}, &models.RemoteMiss{}} {
+		related := []any{
+			&models.Asset{}, &models.Component{}, &models.DistTag{}, &models.Grant{},
+			&models.RemoteMiss{}, &models.RepositoryAlias{}, &models.DeploymentLink{},
+		}
+		for _, model := range related {
 			if err := tx.query().Where("repository_id = ?", repositoryID).Delete(model).Error; err != nil {
 				return err
 			}

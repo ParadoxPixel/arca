@@ -50,6 +50,8 @@ type repositoryResponse struct {
 	UpdatedAt          *int64                 `json:"updatedAt,omitempty"`
 	Stats              *store.RepositoryStats `json:"stats,omitempty"`
 	Members            []string               `json:"members,omitempty"`
+	// Aliases are the former names that still redirect here, newest first.
+	Aliases []string `json:"aliases"`
 }
 
 // serializeRepository never returns RemotePassword, which is write-only from
@@ -72,6 +74,7 @@ func serializeRepository(repository models.Repository, permission, categoryName 
 		NegativeTTLSeconds: repository.NegativeTTLSeconds,
 		CacheRetentionDays: repository.CacheRetentionDays,
 		CreatedAt:          repository.CreatedAt,
+		Aliases:            []string{},
 	}
 	if permission != "" {
 		response.Permission = &permission
@@ -104,8 +107,11 @@ func requireRetention(value *int64, repositoryType string) (int64, error) {
 	return *value, nil
 }
 
+// loadAccessible resolves the repository an API path addresses, following an
+// alias left behind by a rename so a bookmarked page keeps working. Responses
+// always carry the current name back, which is how a caller learns of the move.
 func (s *Server) loadAccessible(request *http.Request, required string) (*models.Repository, string, error) {
-	repository, err := s.store.RepositoryByName(routeVar(request, "name"))
+	repository, _, err := s.store.ResolveRepository(routeVar(request, "name"))
 	if err != nil {
 		return nil, "", fail(http.StatusNotFound, "Repository not found")
 	}
@@ -131,7 +137,7 @@ func (s *Server) loadAdministered(request *http.Request) (*models.Repository, er
 		return nil, err
 	}
 
-	repository, err := s.store.RepositoryByName(routeVar(request, "name"))
+	repository, _, err := s.store.ResolveRepository(routeVar(request, "name"))
 	if err != nil {
 		return nil, fail(http.StatusNotFound, "Repository not found")
 	}
@@ -165,6 +171,11 @@ func (s *Server) routeListRepositories(writer http.ResponseWriter, request *http
 		names[category.ID] = category.Name
 	}
 
+	aliases, err := s.store.AliasNames()
+	if err != nil {
+		return err
+	}
+
 	responses := make([]repositoryResponse, 0, len(repositories))
 	for _, repository := range repositories {
 		permission, err := s.store.EffectivePermission(&repository, user)
@@ -181,6 +192,9 @@ func (s *Server) routeListRepositories(writer http.ResponseWriter, request *http
 		response := serializeRepository(repository, permission, categoryName)
 		response.Components = &summary.Components
 		response.UpdatedAt = &summary.UpdatedAt
+		if named := aliases[repository.ID]; named != nil {
+			response.Aliases = named
+		}
 		responses = append(responses, response)
 	}
 
@@ -319,6 +333,14 @@ func (s *Server) routeRepository(writer http.ResponseWriter, request *http.Reque
 	response := serializeRepository(*repository, permission, s.categoryNameFor(repository.CategoryID))
 	response.Stats = &stats
 
+	aliases, err := s.store.Aliases(repository.ID)
+	if err != nil {
+		return err
+	}
+	for _, alias := range aliases {
+		response.Aliases = append(response.Aliases, alias.Name)
+	}
+
 	if repository.IsGroup() {
 		members, err := s.store.Members(repository.ID)
 		if err != nil {
@@ -341,6 +363,7 @@ func (s *Server) routeUpdateRepository(writer http.ResponseWriter, request *http
 	}
 
 	var body struct {
+		Name               *string   `json:"name"`
 		Format             *string   `json:"format"`
 		Policy             *string   `json:"policy"`
 		Visibility         *string   `json:"visibility"`
@@ -363,6 +386,19 @@ func (s *Server) routeUpdateRepository(writer http.ResponseWriter, request *http
 	// thing per format, and nothing migrates them between two.
 	if body.Format != nil && *body.Format != repository.Format {
 		return fail(http.StatusBadRequest, "format cannot be changed after a repository is created")
+	}
+
+	// A rename is applied at the end rather than through the changes map,
+	// because it also has to leave the old name behind as a redirect and carry
+	// every by-name reference across. It is resolved here so a bad new name
+	// fails before anything else has been written.
+	renamed, err := s.resolveRename(repository, body.Name)
+	if err != nil {
+		return err
+	}
+	name := repository.Name
+	if renamed != "" {
+		name = renamed
 	}
 
 	changes := map[string]any{}
@@ -432,12 +468,12 @@ func (s *Server) routeUpdateRepository(writer http.ResponseWriter, request *http
 		}
 		changes["category_id"] = categoryID
 	}
-	if len(changes) == 0 && body.Members == nil {
+	if len(changes) == 0 && body.Members == nil && renamed == "" {
 		return fail(http.StatusBadRequest, "No changes supplied")
 	}
 
 	if body.Members != nil {
-		members, err := s.validateMembers(repository.Name, repository.Format, repository.Type, *body.Members)
+		members, err := s.validateMembers(name, repository.Format, repository.Type, *body.Members)
 		if err != nil {
 			return err
 		}
@@ -450,14 +486,53 @@ func (s *Server) routeUpdateRepository(writer http.ResponseWriter, request *http
 			return err
 		}
 	}
+	if renamed != "" {
+		if err := s.store.RenameRepository(repository.ID, repository.Name, renamed); err != nil {
+			return err
+		}
+	}
 
-	updated, err := s.store.RepositoryByName(repository.Name)
+	updated, err := s.store.RepositoryByName(name)
 	if err != nil {
 		return err
 	}
 
-	writeJSON(writer, http.StatusOK, serializeRepository(*updated, models.PermissionAdmin, s.categoryNameFor(updated.CategoryID)))
+	response := serializeRepository(*updated, models.PermissionAdmin, s.categoryNameFor(updated.CategoryID))
+
+	aliases, err := s.store.Aliases(updated.ID)
+	if err != nil {
+		return err
+	}
+	for _, alias := range aliases {
+		response.Aliases = append(response.Aliases, alias.Name)
+	}
+
+	writeJSON(writer, http.StatusOK, response)
 	return nil
+}
+
+// resolveRename validates a requested new name and reports it, or an empty
+// string when the request leaves the name alone.
+func (s *Server) resolveRename(repository *models.Repository, requested *string) (string, error) {
+	if requested == nil {
+		return "", nil
+	}
+
+	name, err := requireText(*requested, "name", 64)
+	if err != nil {
+		return "", err
+	}
+	name = strings.ToLower(name)
+	if name == repository.Name {
+		return "", nil
+	}
+	if !store.IsValidRepositoryName(name) {
+		return "", fail(http.StatusBadRequest, "name must be lowercase alphanumeric with dots, dashes or underscores")
+	}
+	if _, err := s.store.RepositoryByName(name); err == nil {
+		return "", fail(http.StatusConflict, "A repository with that name already exists")
+	}
+	return name, nil
 }
 
 func (s *Server) routeDeleteRepository(writer http.ResponseWriter, request *http.Request) error {

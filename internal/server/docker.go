@@ -141,9 +141,14 @@ func (s *Server) authorizeDocker(writer http.ResponseWriter, request *http.Reque
 // repository, so "docker-hosted/team/api" is the team/api image of docker-hosted.
 // Otherwise the whole name resolves against the instance default, which is what
 // makes a bare "docker pull host/nginx" work on a single-repository install.
+//
+// A former name resolves in place rather than redirecting the way the Maven and
+// npm routes do. A Docker client derives every URL of a pull or a push from the
+// reference it was given, so a redirect would only move the one request that
+// received it, and a push would lose its body on the way.
 func (s *Server) resolveDockerRepository(name string) (*models.Repository, string, bool) {
 	if prefix, rest, found := strings.Cut(name, "/"); found && rest != "" {
-		repository, err := s.store.RepositoryByNameAndFormat(prefix, format.Docker)
+		repository, _, err := s.store.ResolveRepositoryOfFormat(prefix, format.Docker)
 		if err == nil && docker.IsValidName(rest) {
 			return repository, rest, true
 		}
@@ -154,7 +159,7 @@ func (s *Server) resolveDockerRepository(name string) (*models.Repository, strin
 		return nil, "", false
 	}
 
-	repository, err := s.store.RepositoryByNameAndFormat(fallback, format.Docker)
+	repository, _, err := s.store.ResolveRepositoryOfFormat(fallback, format.Docker)
 	if err != nil {
 		return nil, "", false
 	}

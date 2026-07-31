@@ -31,9 +31,17 @@ func (s *Server) challenge(writer http.ResponseWriter) {
 func (s *Server) handleRepository(writer http.ResponseWriter, request *http.Request) {
 	name := routeVar(request, "repository")
 
-	repository, err := s.store.RepositoryByName(name)
+	repository, aliased, err := s.store.ResolveRepository(name)
 	if err != nil {
 		plain(writer, http.StatusNotFound, "Repository not found")
+		return
+	}
+	// A name left behind by a rename redirects rather than serving in place, so
+	// a build that follows it learns the new URL and a build that does not
+	// follow redirects fails loudly instead of resolving from a stale name
+	// forever.
+	if aliased {
+		redirectRenamed(writer, request, name, repository.Name)
 		return
 	}
 
@@ -49,6 +57,25 @@ func (s *Server) handleRepository(writer http.ResponseWriter, request *http.Requ
 	default:
 		s.serveMaven(writer, request, repository, path)
 	}
+}
+
+// redirectRenamed points a request at the same path under the repository's
+// current name. A read is answered with a 301 because the move is permanent; a
+// write gets a 308, which is the one redirect that keeps the method and the body
+// rather than turning an upload into a GET.
+func redirectRenamed(writer http.ResponseWriter, request *http.Request, from, to string) {
+	target := "/repository/" + to + strings.TrimPrefix(request.URL.EscapedPath(), "/repository/"+from)
+	if query := request.URL.RawQuery; query != "" {
+		target += "?" + query
+	}
+
+	status := http.StatusMovedPermanently
+	if request.Method != http.MethodGet && request.Method != http.MethodHead {
+		status = http.StatusPermanentRedirect
+	}
+
+	writer.Header().Set("X-Arca-Renamed-From", from)
+	http.Redirect(writer, request, target, status)
 }
 
 func (s *Server) authorize(writer http.ResponseWriter, request *http.Request, repository *models.Repository, required string) bool {

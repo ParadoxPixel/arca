@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowDown, ArrowUp, Plus, Settings2, Trash2, Users } from 'lucide-react'
+import { LinksDialog, linksApply } from '@/components/deployment-links'
 import { Badge, FormatBadge, PolicyBadge, TypeBadge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -87,6 +88,44 @@ function CategoryField({
         </Field>
       ) : null}
     </>
+  )
+}
+
+// AliasField edits the names a repository still answers to. Renaming adds one
+// automatically; removing one here is how a name is let go, and it is separate
+// from the form because it takes effect on its own.
+function AliasField({ repository }: { repository: Repository }) {
+  const queryClient = useQueryClient()
+
+  const mutation = useMutation({
+    mutationFn: (alias: string) => del(`/repositories/${repository.name}/aliases/${alias}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['repositories'] }),
+  })
+
+  if (repository.aliases.length === 0) return null
+
+  return (
+    <Field
+      label="Former names"
+      hint="These still redirect here. Removing one frees the name, and anything still asking for it stops resolving."
+    >
+      <div className="space-y-1.5">
+        {repository.aliases.map((alias) => (
+          <div key={alias} className="flex items-center gap-2 rounded-xl bg-accent px-3 py-2">
+            <span className="flex-1 truncate font-mono text-[13px]">{alias}</span>
+            <button
+              type="button"
+              className={iconAction}
+              aria-label={`Stop redirecting ${alias}`}
+              disabled={mutation.isPending}
+              onClick={() => mutation.mutate(alias)}
+            >
+              <Trash2 className="size-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </Field>
   )
 }
 
@@ -438,6 +477,7 @@ function CreateRepositoryDialog() {
 
 function SettingsDialog({ repository }: { repository: Repository }) {
   const [open, setOpen] = useState(false)
+  const [name, setName] = useState(repository.name)
   const [policy, setPolicy] = useState<Policy>(repository.policy)
   const [visibility, setVisibility] = useState<Visibility>(repository.visibility)
   const [description, setDescription] = useState(repository.description)
@@ -479,6 +519,9 @@ function SettingsDialog({ repository }: { repository: Repository }) {
   const mutation = useMutation({
     mutationFn: async () =>
       patch(`/repositories/${repository.name}`, {
+        // The name goes with the rest of the form, so a rename and a policy
+        // change are one request and cannot half apply.
+        ...(name.trim() !== repository.name ? { name: name.trim() } : {}),
         policy,
         visibility,
         description,
@@ -539,6 +582,21 @@ function SettingsDialog({ repository }: { repository: Repository }) {
           <DialogBody>
             {mutation.error ? <ErrorBlock message={(mutation.error as ApiError).message} /> : null}
             {purge.error ? <ErrorBlock message={(purge.error as ApiError).message} /> : null}
+            <Field
+              label="Name"
+              hint={
+                repository.format === 'docker'
+                  ? 'Renaming keeps the old name resolving, so pulls that still use it keep working until another repository claims it.'
+                  : 'Renaming keeps the old name working as a redirect, so builds that still use it keep resolving until another repository claims it.'
+              }
+            >
+              <Input
+                value={name}
+                onChange={(event) => setName(event.target.value.toLowerCase())}
+                className="font-mono"
+              />
+            </Field>
+            <AliasField repository={repository} />
             {isGroup ? (
               <MemberField members={members} onChange={setMembers} candidates={p2Repositories} />
             ) : null}
@@ -661,7 +719,9 @@ function SettingsDialog({ repository }: { repository: Repository }) {
             <Button
               type="submit"
               disabled={
-                (categoryId === NEW_CATEGORY && !categoryName.trim()) || mutation.isPending
+                !name.trim() ||
+                (categoryId === NEW_CATEGORY && !categoryName.trim()) ||
+                mutation.isPending
               }
             >
               Save changes
@@ -878,6 +938,11 @@ export function AdminRepositoriesRoute() {
                       {repository.remoteUrl}
                     </span>
                   ) : null}
+                  {repository.aliases.length > 0 ? (
+                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                      was {repository.aliases.join(', ')}
+                    </span>
+                  ) : null}
                 </TableCell>
                 <TableCell className="text-[13px] text-muted-foreground">
                   {repository.categoryName || <span className="text-faint">None</span>}
@@ -901,6 +966,7 @@ export function AdminRepositoriesRoute() {
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center justify-end gap-0.5">
+                    {linksApply(repository) ? <LinksDialog repository={repository} /> : null}
                     <GrantsDialog repository={repository} />
                     <SettingsDialog repository={repository} />
                     <DeleteDialog repository={repository} />

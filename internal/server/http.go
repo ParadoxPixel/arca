@@ -44,6 +44,13 @@ func (s *Server) routes() {
 	api.Handle("/repositories/{name}/cache", handler(s.routePurgeCache)).Methods(http.MethodDelete)
 	api.Handle("/repositories/{name}/grants", handler(s.routeListGrants)).Methods(http.MethodGet)
 	api.Handle("/repositories/{name}/grants", handler(s.routeReplaceGrants)).Methods(http.MethodPut)
+	api.Handle("/repositories/{name}/aliases", handler(s.routeListAliases)).Methods(http.MethodGet)
+	api.Handle("/repositories/{name}/aliases", handler(s.routeCreateAlias)).Methods(http.MethodPost)
+	api.Handle("/repositories/{name}/aliases/{alias}", handler(s.routeDeleteAlias)).Methods(http.MethodDelete)
+	api.Handle("/repositories/{name}/links", handler(s.routeListLinks)).Methods(http.MethodGet)
+	api.Handle("/repositories/{name}/links", handler(s.routeCreateLink)).Methods(http.MethodPost)
+	api.Handle("/repositories/{name}/links/{id}", handler(s.routeUpdateLink)).Methods(http.MethodPatch)
+	api.Handle("/repositories/{name}/links/{id}", handler(s.routeDeleteLink)).Methods(http.MethodDelete)
 
 	api.Handle("/repositories/{name}/browse", handler(s.routeBrowse)).Methods(http.MethodGet)
 	api.Handle("/repositories/{name}/artifacts", handler(s.routeArtifact)).Methods(http.MethodGet)
@@ -74,6 +81,12 @@ func (s *Server) routes() {
 	api.PathPrefix("/").HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "Not found"})
 	})
+
+	// Deployment links sit at the host root rather than under /repository,
+	// because the slug is the whole address: the repository a link reads from is
+	// private more often than not and has no business being in the URL.
+	s.router.Handle("/download/{slug}", http.HandlerFunc(s.handleDownload)).
+		Methods(http.MethodGet, http.MethodHead)
 
 	repositoryMethods := []string{http.MethodGet, http.MethodHead, http.MethodPut, http.MethodPost, http.MethodDelete}
 	s.router.Handle("/repository/{repository}", http.HandlerFunc(s.handleRepository)).Methods(repositoryMethods...)

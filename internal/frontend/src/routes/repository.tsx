@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EmptyState, ErrorBlock, LoadingBlock } from '@/components/ui/feedback'
 import { Coordinate, CopyButton } from '@/components/copy-button'
+import { DeploymentLinks, linksApply } from '@/components/deployment-links'
 import { MavenUsage } from '@/components/snippets/maven'
 import { NPMUsage } from '@/components/snippets/npm'
 import { P2Usage } from '@/components/snippets/p2'
@@ -339,6 +340,20 @@ export function RepositoryRoute() {
           </p>
         ) : null}
 
+        {data.aliases.length > 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Also answers to{' '}
+            {data.aliases.map((alias, index) => (
+              <span key={alias}>
+                {index > 0 ? ', ' : ''}
+                <code className="font-mono text-[13px]">{alias}</code>
+              </span>
+            ))}
+            , which {data.aliases.length === 1 ? 'redirects' : 'redirect'} here from before it was
+            renamed.
+          </p>
+        ) : null}
+
         {data.type === 'proxy' ? (
           <p className="text-sm text-muted-foreground">
             Mirrors <code className="font-mono text-[13px]">{data.remoteUrl}</code>. Artifacts are
@@ -368,6 +383,7 @@ export function RepositoryRoute() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="browse">Browse</TabsTrigger>
           <TabsTrigger value="usage">Usage</TabsTrigger>
+          {linksApply(data) ? <TabsTrigger value="links">Links</TabsTrigger> : null}
         </TabsList>
         <TabsContent value="overview">
           <Overview repository={name} format={data.format} isProxy={data.type === 'proxy'} />
@@ -383,6 +399,11 @@ export function RepositoryRoute() {
         <TabsContent value="usage">
           <Usage repository={data} />
         </TabsContent>
+        {linksApply(data) ? (
+          <TabsContent value="links">
+            <DeploymentLinks repository={data} />
+          </TabsContent>
+        ) : null}
       </Tabs>
     </>
   )
