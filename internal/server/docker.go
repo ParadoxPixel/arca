@@ -44,6 +44,21 @@ func (s *Server) dockerChallenge(writer http.ResponseWriter, request *http.Reque
 	dockerError(writer, http.StatusUnauthorized, docker.ErrorUnauthorized, message)
 }
 
+// refuseDockerRepository is refuseRepository in the registry's vocabulary: a
+// challenge for an anonymous client, NAME_UNKNOWN for a signed-in user who
+// cannot read the repository, whether or not it exists, and DENIED only for a
+// reader who may not write.
+func (s *Server) refuseDockerRepository(writer http.ResponseWriter, request *http.Request, permission string) {
+	switch {
+	case currentUser(request) == nil:
+		s.dockerChallenge(writer, request, "Authentication required")
+	case permission == "":
+		dockerError(writer, http.StatusNotFound, docker.ErrorNameUnknown, "Not found")
+	default:
+		dockerError(writer, http.StatusForbidden, docker.ErrorDenied, "You do not have permission to do that")
+	}
+}
+
 // registryRequest is one resolved registry call. Route.Name is kept alongside the
 // image because every Location header has to echo the name the client used, which
 // carries the repository prefix that the image name on its own has lost.
@@ -81,8 +96,7 @@ func (s *Server) handleDockerRegistry(writer http.ResponseWriter, request *http.
 
 	repository, image, ok := s.resolveDockerRepository(route.Name)
 	if !ok {
-		dockerError(writer, http.StatusNotFound, docker.ErrorNameUnknown,
-			fmt.Sprintf("%q does not name a repository and an image on this server", route.Name))
+		s.refuseDockerRepository(writer, request, "")
 		return
 	}
 
@@ -132,7 +146,7 @@ func (s *Server) authorizeDocker(writer http.ResponseWriter, request *http.Reque
 		return true
 	}
 
-	s.dockerChallenge(writer, request, "You do not have permission to do that")
+	s.refuseDockerRepository(writer, request, permission)
 	return false
 }
 

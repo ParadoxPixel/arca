@@ -56,7 +56,7 @@ func (s *Server) routeCreateToken(writer http.ResponseWriter, request *http.Requ
 		Name          string  `json:"name"`
 		ExpiresInDays float64 `json:"expiresInDays"`
 	}
-	if err := decodeBody(request, &body); err != nil {
+	if err := s.decodeBody(request, &body); err != nil {
 		return err
 	}
 

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="currentColor" role="img" aria-label="Arca">
+<title>Arca mark, single colour</title>
+<g transform="translate(140.2 56) scale(2.63)">
+<path d="M0 56 V44 A44 44 0 0 1 88 44 V56 H66 V44 A22 22 0 0 0 22 44 V56 Z"/>
+<rect x="0" y="62" width="22" height="24"/><rect x="66" y="62" width="22" height="24"/>
+<rect x="0" y="92" width="22" height="24"/><rect x="66" y="92" width="22" height="24"/>
+<rect x="0" y="122" width="22" height="30"/><rect x="66" y="122" width="22" height="30"/>
+</g>
+</svg>

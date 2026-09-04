@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -209,16 +210,24 @@ func TestDeploymentLinkValidationAndLifecycle(t *testing.T) {
 		})
 	}
 
-	t.Run("a slug is derived from the artifact when it is left out", func(t *testing.T) {
-		body := expectStatus(t, instance.api(http.MethodPost, "/api/repositories/internal/links",
+	t.Run("a random slug is minted when it is left out", func(t *testing.T) {
+		first := expectStatus(t, instance.api(http.MethodPost, "/api/repositories/internal/links",
+			`{"namespace":"com.example","artifact":"app","pattern":"{name}-{version}.jar"}`), http.StatusCreated)
+		second := expectStatus(t, instance.api(http.MethodPost, "/api/repositories/internal/links",
 			`{"namespace":"com.example","artifact":"app","pattern":"{name}-{version}.jar"}`), http.StatusCreated)
 
-		if slug := decodeLink(t, body).Slug; slug != "app-latest" {
-			t.Fatalf("slug = %q, want app-latest", slug)
+		one, two := decodeLink(t, first).Slug, decodeLink(t, second).Slug
+		if one == "app-latest" || len(one) < 16 || !regexp.MustCompile(`^[a-z0-9]+$`).MatchString(one) {
+			t.Fatalf("slug = %q, want a random lowercase alphanumeric one", one)
+		}
+		if one == two {
+			t.Fatalf("two links without a slug both got %q", one)
 		}
 	})
 
 	t.Run("slugs are unique across the instance", func(t *testing.T) {
+		expectStatus(t, instance.api(http.MethodPost, "/api/repositories/internal/links",
+			`{"namespace":"com.example","artifact":"app","pattern":"{name}-{version}.jar","slug":"app-latest"}`), http.StatusCreated)
 		expectStatus(t, instance.api(http.MethodPost, "/api/repositories/internal/links",
 			`{"artifact":"app","pattern":"*.jar","slug":"app-latest"}`), http.StatusConflict)
 	})
@@ -227,14 +236,23 @@ func TestDeploymentLinkValidationAndLifecycle(t *testing.T) {
 		body := expectStatus(t, instance.api(http.MethodGet, "/api/repositories/internal/links", ""), http.StatusOK)
 		var payload struct {
 			Links []struct {
-				ID string `json:"id"`
+				ID   string `json:"id"`
+				Slug string `json:"slug"`
 			} `json:"links"`
 		}
 		if err := json.Unmarshal([]byte(body), &payload); err != nil {
 			t.Fatalf("decoding links: %v", err)
 		}
 
-		identifier := payload.Links[0].ID
+		identifier := ""
+		for _, deployment := range payload.Links {
+			if deployment.Slug == "app-latest" {
+				identifier = deployment.ID
+			}
+		}
+		if identifier == "" {
+			t.Fatalf("app-latest is missing from the listing: %s", body)
+		}
 		expectStatus(t, instance.api(http.MethodPatch, "/api/repositories/internal/links/"+identifier, `{"disabled":true}`), http.StatusOK)
 		expectStatus(t, instance.doAnonymously(instance.request(http.MethodGet, "/download/app-latest", "")), http.StatusNotFound)
 

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/charmbracelet/log"
@@ -59,12 +61,53 @@ func noContent(writer http.ResponseWriter) error {
 	return nil
 }
 
-func decodeBody(request *http.Request, target any) error {
+// decodeBody reads a JSON request. Two checks come first, and together they are
+// what keeps a page on another site from driving this API with the session
+// cookie a browser would attach. The body has to be declared as JSON, which a
+// form cannot do without a preflight this server never answers; and a browser
+// that names its Origin has to name this server, which shuts out a page on a
+// sibling subdomain that the cookie's SameSite rule would otherwise let in.
+// Clients that send no Origin, such as build tools with an API token, are
+// unaffected.
+func (s *Server) decodeBody(request *http.Request, target any) error {
+	if err := s.checkOrigin(request); err != nil {
+		return err
+	}
+	if !isJSONContentType(request.Header.Get("Content-Type")) {
+		return fail(http.StatusBadRequest, "Content-Type must be application/json")
+	}
+
 	decoder := json.NewDecoder(io.LimitReader(request.Body, 1<<20))
 	if err := decoder.Decode(target); err != nil {
 		return fail(http.StatusBadRequest, "Invalid JSON")
 	}
 	return nil
+}
+
+func isJSONContentType(value string) bool {
+	mediaType, _, err := mime.ParseMediaType(value)
+	if err != nil {
+		return false
+	}
+	return mediaType == "application/json"
+}
+
+func (s *Server) checkOrigin(request *http.Request) error {
+	origin := request.Header.Get("Origin")
+	if origin == "" {
+		return nil
+	}
+
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Host == "" {
+		return fail(http.StatusForbidden, "Cross-origin requests are not accepted")
+	}
+	for _, host := range s.publicHosts(request) {
+		if strings.EqualFold(parsed.Host, host) {
+			return nil
+		}
+	}
+	return fail(http.StatusForbidden, "Cross-origin requests are not accepted")
 }
 
 func currentUser(request *http.Request) *models.User {

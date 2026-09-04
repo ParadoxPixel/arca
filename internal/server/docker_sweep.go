@@ -25,6 +25,15 @@ import (
 // would delete exactly what it is actively using. Proxies age out by last access
 // instead, which purgeIdleCaches already does for every format.
 
+// sweepGracePeriod is how long a freshly stored blob or manifest is left alone
+// even when nothing references it. A push stores its layers first and the
+// manifest that ties them together last, so a sweep that ran in between would
+// find every layer unreferenced, delete them, and leave the tag that arrived a
+// moment later pointing at bytes that no longer exist. Nothing a client does
+// can repair that, since a re-push sees the manifest already present. The
+// grace is a day to cover any push a chunked upload session can still finish.
+const sweepGracePeriod = 24 * time.Hour
+
 type sweepResult struct {
 	Repository string `json:"repository"`
 	Blobs      int    `json:"blobs"`
@@ -46,6 +55,7 @@ type sweepPlan struct {
 // walk backs both the preview and the sweep.
 func (s *Server) planDockerSweep(repository *models.Repository) (sweepPlan, error) {
 	plan := sweepPlan{repository: repository, result: sweepResult{Repository: repository.Name}}
+	settledBefore := time.Now().Add(-s.sweepGrace()).UnixMilli()
 
 	roots, err := s.store.DockerTagRoots(repository.ID)
 	if err != nil {
@@ -92,7 +102,7 @@ func (s *Server) planDockerSweep(repository *models.Repository) (sweepPlan, erro
 		return plan, err
 	}
 	for _, blob := range blobs {
-		if reachableBlobs[docker.SHA256(blob.SHA256).String()] {
+		if reachableBlobs[docker.SHA256(blob.SHA256).String()] || blob.CreatedAt >= settledBefore {
 			continue
 		}
 		plan.paths = append(plan.paths, blob.Path)
@@ -104,6 +114,9 @@ func (s *Server) planDockerSweep(repository *models.Repository) (sweepPlan, erro
 		return plan, err
 	}
 	for _, manifest := range manifests {
+		if manifest.CreatedAt >= settledBefore {
+			continue
+		}
 		plan.paths = append(plan.paths, manifest.Path)
 		plan.digests = append(plan.digests, docker.SHA256(manifest.SHA256).String())
 		plan.result.Manifests++
@@ -164,6 +177,15 @@ func (s *Server) applyDockerSweep(plan sweepPlan) (sweepResult, error) {
 		plan.result.Blobs, plan.result.Manifests, plan.repository.Name)
 
 	return plan.result, nil
+}
+
+// sweepGrace is the grace period in force. Tests shorten it through
+// sweepGraceOverride; nothing else does.
+func (s *Server) sweepGrace() time.Duration {
+	if s.sweepGraceOverride != nil {
+		return *s.sweepGraceOverride
+	}
+	return sweepGracePeriod
 }
 
 // sweepDockerRepositories runs the sweep over every docker repository. A failure on

@@ -1,6 +1,9 @@
 package server
 
 import (
+	"crypto/rand"
+	"encoding/base32"
+	"errors"
 	"net/http"
 	"regexp"
 	"strings"
@@ -68,7 +71,7 @@ func (s *Server) serializeLink(request *http.Request, repository *models.Reposit
 	response := linkResponse{
 		ID:          deployment.ID,
 		Slug:        deployment.Slug,
-		URL:         publicBase(request) + downloadPath(deployment.Slug),
+		URL:         s.publicBase(request) + downloadPath(deployment.Slug),
 		Repository:  repository.Name,
 		Description: deployment.Description,
 		Namespace:   deployment.Namespace,
@@ -145,7 +148,7 @@ func (s *Server) routeCreateLink(writer http.ResponseWriter, request *http.Reque
 	}
 
 	var body linkBody
-	if err := decodeBody(request, &body); err != nil {
+	if err := s.decodeBody(request, &body); err != nil {
 		return err
 	}
 
@@ -181,7 +184,7 @@ func (s *Server) routeCreateLink(writer http.ResponseWriter, request *http.Reque
 		return err
 	}
 
-	slug, err := s.resolveSlug(orBlank(body.Slug), artifact)
+	slug, err := s.resolveSlug(orBlank(body.Slug))
 	if err != nil {
 		return err
 	}
@@ -219,7 +222,7 @@ func (s *Server) routeUpdateLink(writer http.ResponseWriter, request *http.Reque
 	}
 
 	var body linkBody
-	if err := decodeBody(request, &body); err != nil {
+	if err := s.decodeBody(request, &body); err != nil {
 		return err
 	}
 
@@ -248,7 +251,7 @@ func (s *Server) routeUpdateLink(writer http.ResponseWriter, request *http.Reque
 	if body.Slug != nil {
 		slug := strings.ToLower(strings.TrimSpace(*body.Slug))
 		if slug != deployment.Slug {
-			resolved, err := s.resolveSlug(slug, deployment.Artifact)
+			resolved, err := s.resolveSlug(slug)
 			if err != nil {
 				return err
 			}
@@ -327,13 +330,17 @@ func (s *Server) routeDeleteLink(writer http.ResponseWriter, request *http.Reque
 	return noContent(writer)
 }
 
-// resolveSlug takes the slug the caller asked for, or derives one from the
-// artifact when they left it out. Slugs are unique across the instance because
-// the download URL carries no repository name to disambiguate them.
-func (s *Server) resolveSlug(requested, artifact string) (string, error) {
+// resolveSlug takes the slug the caller asked for, or mints a random one when
+// they left it out. A link is served without authentication, so the slug is
+// the only thing standing between the public and a file of a private
+// repository: a derived one such as "<artifact>-latest" would be guessable by
+// anyone who knows what the repository holds. Slugs are unique across the
+// instance because the download URL carries no repository name to
+// disambiguate them.
+func (s *Server) resolveSlug(requested string) (string, error) {
 	slug := strings.ToLower(strings.TrimSpace(requested))
 	if slug == "" {
-		slug = strings.ToLower(artifact) + "-latest"
+		return s.randomSlug()
 	}
 	if !store.IsValidSlug(slug) {
 		return "", fail(http.StatusBadRequest, "slug must be lowercase alphanumeric with dots, dashes or underscores")
@@ -342,6 +349,24 @@ func (s *Server) resolveSlug(requested, artifact string) (string, error) {
 		return "", fail(http.StatusConflict, "A link with that slug already exists")
 	}
 	return slug, nil
+}
+
+// randomSlugLength is in base32 characters, which is 80 bits of entropy: more
+// than a session token needs to be unguessable and short enough to paste.
+const randomSlugLength = 16
+
+func (s *Server) randomSlug() (string, error) {
+	for attempt := 0; attempt < 5; attempt++ {
+		buffer := make([]byte, randomSlugLength)
+		if _, err := rand.Read(buffer); err != nil {
+			return "", err
+		}
+		slug := strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(buffer))[:randomSlugLength]
+		if _, err := s.store.LinkBySlug(slug); err != nil {
+			return slug, nil
+		}
+	}
+	return "", errors.New("server: could not find an unused slug")
 }
 
 func requireNamespace(raw string) (string, error) {

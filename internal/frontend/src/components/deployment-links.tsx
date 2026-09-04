@@ -166,11 +166,14 @@ function LinkForm({
             <option value="mixed">The latest of either</option>
           </Select>
         </Field>
-        <Field label="Slug" hint="The last part of the URL. Derived from the artifact if left empty.">
+        <Field
+          label="Slug"
+          hint="The last part of the URL. Left empty, a random unguessable one is minted; anyone who knows the URL can download the file."
+        >
           <Input
             value={draft.slug}
             onChange={(event) => set('slug', event.target.value.toLowerCase())}
-            placeholder="pixelscript-paper-latest"
+            placeholder="random"
             className="font-mono"
           />
         </Field>

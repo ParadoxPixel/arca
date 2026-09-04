@@ -33,14 +33,18 @@ func (s *Server) handleRepository(writer http.ResponseWriter, request *http.Requ
 
 	repository, aliased, err := s.store.ResolveRepository(name)
 	if err != nil {
-		plain(writer, http.StatusNotFound, "Repository not found")
+		s.refuseRepository(writer, request, "")
 		return
 	}
 	// A name left behind by a rename redirects rather than serving in place, so
 	// a build that follows it learns the new URL and a build that does not
 	// follow redirects fails loudly instead of resolving from a stale name
-	// forever.
+	// forever. The redirect names the repository's new name, so it is only
+	// given to a caller who may read it.
 	if aliased {
+		if !s.authorize(writer, request, repository, models.PermissionRead) {
+			return
+		}
 		redirectRenamed(writer, request, name, repository.Name)
 		return
 	}
@@ -91,12 +95,26 @@ func (s *Server) authorize(writer http.ResponseWriter, request *http.Request, re
 		return true
 	}
 
-	if user == nil {
+	s.refuseRepository(writer, request, permission)
+	return false
+}
+
+// refuseRepository answers a request that may not do what it asked, without
+// confirming to anyone who cannot read the repository that it exists. An
+// anonymous client is challenged, which is what lets a build tool send its
+// credentials at all, and is the answer whether the repository is private or
+// was never there. A signed-in user who cannot read it is told it does not
+// exist, again the same as a name that never did. Only a user who can read it
+// but lacks the permission the request needs is told so in as many words.
+func (s *Server) refuseRepository(writer http.ResponseWriter, request *http.Request, permission string) {
+	switch {
+	case currentUser(request) == nil:
 		s.challenge(writer)
-	} else {
+	case permission == "":
+		plain(writer, http.StatusNotFound, "Repository not found")
+	default:
 		plain(writer, http.StatusForbidden, "Forbidden")
 	}
-	return false
 }
 
 func (s *Server) writeAsset(writer http.ResponseWriter, request *http.Request, asset *models.Asset) bool {
@@ -108,6 +126,11 @@ func (s *Server) writeAsset(writer http.ResponseWriter, request *http.Request, a
 
 	header := writer.Header()
 	header.Set("Content-Type", asset.ContentType)
+	// A stored file is a download, never a page. Where the caller has already
+	// named the file, as a deployment link does, that disposition stands.
+	if header.Get("Content-Disposition") == "" {
+		header.Set("Content-Disposition", "attachment")
+	}
 	header.Set("X-Checksum-MD5", asset.MD5)
 	header.Set("X-Checksum-SHA1", asset.SHA1)
 	header.Set("X-Checksum-SHA256", asset.SHA256)
@@ -234,6 +257,7 @@ func (s *Server) writeDirectoryIndex(writer http.ResponseWriter, repository *mod
 	}
 
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+	writer.Header().Set("Content-Security-Policy", indexPolicy)
 	fmt.Fprintf(writer, `<!doctype html>
 <html><head><meta charset="utf-8"><title>Index of %s</title>
 <style>body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin:2rem;color:#111}table{border-collapse:collapse}td{padding:.15rem 1.5rem .15rem 0}a{color:#0b57d0}</style>

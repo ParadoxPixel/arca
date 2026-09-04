@@ -275,7 +275,9 @@ Replace the binary and restart. The schema is applied on startup, and the data d
 touched by a deployment, so there is no migration step and no downtime beyond the restart.
 
 On the first deployment there is no database. The server starts empty and serves the setup wizard,
-so log in and complete it before pointing any builds at the host.
+which asks for the setup token the server printed to its log on startup (`docker compose logs arca`,
+or `journalctl -u arca`), or the one `SETUP_TOKEN` was set to. Nobody who merely finds the address
+can complete the wizard without it. Complete it before pointing any builds at the host.
 
 ## TLS and reverse proxies
 
@@ -283,7 +285,18 @@ Terminating TLS is left to a reverse proxy. Two things to get right:
 
 - Raise the proxy's body size limit to match `MAX_UPLOAD_BYTES`, or large artifacts fail at the
   proxy with an error that looks like it came from the repository.
-- Forward `X-Forwarded-Proto` and `X-Forwarded-Host`. npm tarball URLs are built from the request,
-  so without them a proxied npm repository hands out `http://` links to an internal hostname.
+- Set `BASE_URL` to the public address, such as `https://artifacts.example.com`. npm tarball URLs
+  and deployment link URLs are built on it. Without it they are built from the request instead,
+  using `X-Forwarded-Proto` and `X-Forwarded-Host`, which only works out if the proxy overwrites
+  those headers rather than passing on whatever a client sent. nginx-ingress does; check yours.
 
 Serving the repository directly on a port, with no proxy in front, needs neither.
+
+## Sign-in throttling
+
+Password checks are throttled: after 20 failures for one account, or 100 from one client address,
+within five minutes, further attempts are answered `429` until the window passes. The address is
+the connection's peer rather than `X-Forwarded-For`, which a client can forge, so behind a proxy
+every client shares one address budget and the per-account limit is what carries the load. A
+correct password presented as Basic credentials is remembered for five minutes, so a build that
+sends it on every request costs one check rather than hundreds.

@@ -13,7 +13,16 @@ make build      # builds the frontend, then the binary into bin/arca
 ./bin/arca
 ```
 
-Open <http://localhost:8080> and complete the setup wizard.
+Open <http://localhost:8080> and complete the setup wizard. Its first field is the setup token,
+which the server prints to its log when it starts on an empty database:
+
+```
+WARN this instance is not set up yet; the setup wizard requires this token: Zk3v…
+```
+
+The token is what stops whoever reaches the address first from becoming the administrator, so the
+instance can be exposed before setup has run. Set `SETUP_TOKEN` to choose it yourself, which an
+automated install wants. Once setup has completed the wizard is gone and the token is forgotten.
 
 ![The setup wizard]({{ site.baseurl }}/assets/img/setup.jpg)
 
@@ -33,6 +42,8 @@ container.
 | `--storage` | `STORAGE_DIR` | `./data/storage` | directory holding uploaded artifacts |
 | `--max-upload` | `MAX_UPLOAD_BYTES` | 256 MiB | largest artifact accepted |
 | `--proxy-timeout` | `PROXY_TIMEOUT_SECONDS` | `60` | how long a proxy waits for its upstream |
+| `--base-url` | `BASE_URL` | derived per request | public URL of this server, such as `https://artifacts.example.com` |
+| `--setup-token` | `SETUP_TOKEN` | generated and logged | token the first-run wizard asks for |
 | `--dev` | `DEV_MODE` | `false` | proxy the UI to a vite dev server |
 | `--vite-url` | `VITE_URL` | `http://localhost:5173` | vite dev server to proxy |
 

@@ -63,6 +63,9 @@ func (s *Server) dockerManifestFetch(registry registryRequest) proxyFetch {
 		RemotePath: remoteRoot + remote + "/manifests/" + registry.route.Reference,
 		Accept:     manifestAccept,
 	}
+	if registry.route.ByDigest {
+		fetch.ExpectSHA256 = registry.route.Digest.Hex
+	}
 	fetch.Indexed = func(asset *models.Asset) error {
 		return s.indexCachedDockerManifest(registry, asset)
 	}
@@ -80,9 +83,10 @@ func (s *Server) dockerBlobFetch(registry registryRequest) proxyFetch {
 	digest := registry.route.Digest
 
 	return proxyFetch{
-		CachePath:  docker.BlobPath(digest),
-		RemotePath: remoteRoot + remote + "/blobs/" + digest.String(),
-		Limit:      s.dockerBlobLimit(),
+		CachePath:    docker.BlobPath(digest),
+		RemotePath:   remoteRoot + remote + "/blobs/" + digest.String(),
+		Limit:        s.dockerBlobLimit(),
+		ExpectSHA256: digest.Hex,
 		Headers: func(*models.Asset) map[string]string {
 			return map[string]string{docker.ContentDigestHeader: digest.String()}
 		},

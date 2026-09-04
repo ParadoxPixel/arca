@@ -2,6 +2,8 @@ package proxy
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -100,8 +102,14 @@ func splitParameters(value string) []string {
 	return append(parameters, value[start:])
 }
 
+// key names a cache slot. The credentials are part of it, hashed: a token carries
+// whatever rights the credentials it was issued for have, so two proxies pointed at
+// the same upstream with different credentials must never share one. Otherwise an
+// anonymous public proxy could pull a private image through a token its
+// credentialled sibling had just cached.
 func (c challenge) key(remote Remote) string {
-	return remote.BaseURL + "|" + c.Realm + "|" + c.Service + "|" + c.Scope
+	credentials := sha256.Sum256([]byte(remote.Username + "\x00" + remote.Password))
+	return remote.BaseURL + "|" + c.Realm + "|" + c.Service + "|" + c.Scope + "|" + hex.EncodeToString(credentials[:])
 }
 
 type cachedToken struct {

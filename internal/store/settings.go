@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"strconv"
 
 	"gorm.io/gorm/clause"
@@ -58,6 +59,26 @@ func (s *Store) DeleteSetting(key string) error {
 func (s *Store) IsInitialized() (bool, error) {
 	value, err := s.Setting(SettingInitialized)
 	return value == "true", err
+}
+
+// ErrAlreadyInitialized is what a second setup gets: the row that marks an
+// instance as set up can be inserted exactly once.
+var ErrAlreadyInitialized = errors.New("store: this instance is already initialized")
+
+// ClaimInitialization marks the instance as set up with a plain insert rather
+// than an upsert, so two setups racing each other inside their own transactions
+// cannot both succeed: the second insert conflicts and its transaction rolls
+// back with it.
+func (s *Store) ClaimInitialization() error {
+	result := s.db.Clauses(clause.OnConflict{DoNothing: true}).
+		Create(&models.Setting{Key: SettingInitialized, Value: "true"})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrAlreadyInitialized
+	}
+	return nil
 }
 
 func (s *Store) InstanceName() string {

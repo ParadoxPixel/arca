@@ -27,6 +27,7 @@ const (
 var (
 	ErrSchemaVersion1 = errors.New("docker: schema 1 manifests are not supported")
 	ErrUnknownShape   = errors.New("docker: the document is neither an image manifest nor an index")
+	ErrMediaType      = errors.New("docker: the manifest declares a media type this registry does not store")
 )
 
 type Platform struct {
@@ -181,6 +182,13 @@ func ParseManifest(document []byte) (Manifest, error) {
 			manifest.MediaType = MediaTypeOCIManifest
 		}
 	}
+	// The declared type becomes the Content-Type the document is served back
+	// with, on this server's own origin. Anything outside the four manifest
+	// encodings is refused rather than stored: a manifest claiming to be text/html
+	// would otherwise be rendered by a browser that followed a link to it.
+	if !IsStorableManifestMediaType(manifest.MediaType) {
+		return Manifest{}, fmt.Errorf("%w: %q", ErrMediaType, manifest.MediaType)
+	}
 
 	for _, reference := range manifest.References() {
 		if !IsValidDigest(reference.Digest) {
@@ -229,6 +237,18 @@ func Accepts(accept []string, mediaType string) bool {
 // the blob being absent.
 func IsNondistributable(mediaType string) bool {
 	return strings.Contains(mediaType, "foreign") || strings.Contains(mediaType, "nondistributable")
+}
+
+// IsStorableManifestMediaType is the allowlist of what a pushed manifest may
+// declare itself as. Schema 1 is excluded because the parser rejects the
+// document anyway, so it can never be an honest label.
+func IsStorableManifestMediaType(mediaType string) bool {
+	switch mediaType {
+	case MediaTypeOCIManifest, MediaTypeOCIIndex, MediaTypeDockerManifest, MediaTypeDockerList:
+		return true
+	default:
+		return false
+	}
 }
 
 // IsManifestMediaType reports whether a content type names a manifest rather

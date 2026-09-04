@@ -44,7 +44,7 @@ func (s *Server) routeCreateAlias(writer http.ResponseWriter, request *http.Requ
 	var body struct {
 		Name string `json:"name"`
 	}
-	if err := decodeBody(request, &body); err != nil {
+	if err := s.decodeBody(request, &body); err != nil {
 		return err
 	}
 

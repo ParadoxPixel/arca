@@ -85,12 +85,13 @@ func (s *Server) routes() {
 	// Deployment links sit at the host root rather than under /repository,
 	// because the slug is the whole address: the repository a link reads from is
 	// private more often than not and has no business being in the URL.
-	s.router.Handle("/download/{slug}", http.HandlerFunc(s.handleDownload)).
+	s.router.Handle("/download/{slug}", contentHeaders(http.HandlerFunc(s.handleDownload))).
 		Methods(http.MethodGet, http.MethodHead)
 
 	repositoryMethods := []string{http.MethodGet, http.MethodHead, http.MethodPut, http.MethodPost, http.MethodDelete}
-	s.router.Handle("/repository/{repository}", http.HandlerFunc(s.handleRepository)).Methods(repositoryMethods...)
-	s.router.PathPrefix("/repository/{repository}/").HandlerFunc(s.handleRepository).Methods(repositoryMethods...)
+	repository := contentHeaders(http.HandlerFunc(s.handleRepository))
+	s.router.Handle("/repository/{repository}", repository).Methods(repositoryMethods...)
+	s.router.PathPrefix("/repository/{repository}/").Handler(repository).Methods(repositoryMethods...)
 
 	// The registry API lives at the host root because a Docker client builds its
 	// URLs from the image reference and cannot be pointed at a path prefix. PATCH
@@ -99,11 +100,35 @@ func (s *Server) routes() {
 		http.MethodGet, http.MethodHead, http.MethodPost,
 		http.MethodPut, http.MethodPatch, http.MethodDelete,
 	}
-	s.router.Handle("/v2", http.HandlerFunc(s.handleDockerRegistry)).Methods(registryMethods...)
-	s.router.PathPrefix("/v2/").HandlerFunc(s.handleDockerRegistry).Methods(registryMethods...)
+	registry := contentHeaders(http.HandlerFunc(s.handleDockerRegistry))
+	s.router.Handle("/v2", registry).Methods(registryMethods...)
+	s.router.PathPrefix("/v2/").Handler(registry).Methods(registryMethods...)
 
 	s.mountFrontend()
 }
+
+// contentHeaders wraps every route that hands back bytes somebody else uploaded.
+// Those bytes are served on the same origin as the UI, whose session cookie is sent
+// on a top-level navigation, so a stored file must never be allowed to run as a
+// page: nosniff keeps the browser from second-guessing the type, and the policy
+// forbids scripts and any other resource even for a type it does render, XML and
+// SVG included. Set before the handler runs so an error body is covered too.
+func contentHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		header := writer.Header()
+		header.Set("X-Content-Type-Options", "nosniff")
+		header.Set("Content-Security-Policy", contentPolicy)
+		next.ServeHTTP(writer, request)
+	})
+}
+
+const (
+	contentPolicy = "default-src 'none'; sandbox"
+	// indexPolicy is what the generated directory listing runs under. It is this
+	// server's own markup with every name escaped, and it needs its one inline
+	// stylesheet; it still loads no script and no remote resource.
+	indexPolicy = "default-src 'none'; style-src 'unsafe-inline'"
+)
 
 func recoverMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

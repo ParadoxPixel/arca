@@ -206,8 +206,9 @@ func (s *Store) DockerImages(repositoryID string) ([]string, error) {
 // StoredFile is one asset a sweep has to decide about: its path to delete by, and
 // its digest to match against what is still reachable.
 type StoredFile struct {
-	Path   string
-	SHA256 string
+	Path      string
+	SHA256    string
+	CreatedAt int64
 }
 
 // DockerTagRoots names every manifest a tag points at. A tag manifest is the only
@@ -216,7 +217,7 @@ type StoredFile struct {
 func (s *Store) DockerTagRoots(repositoryID string) ([]StoredFile, error) {
 	files := []StoredFile{}
 	err := s.db.Model(&models.Asset{}).
-		Select("path, sha256").
+		Select("path, sha256, created_at").
 		Where("repository_id = ? AND component_id IS NOT NULL", repositoryID).
 		Scan(&files).Error
 	return files, err
@@ -229,7 +230,7 @@ func (s *Store) DockerStoredFiles(repositoryID, prefix string) ([]StoredFile, er
 
 	bounds, bounded := RangeForPrefix(prefix)
 	query := s.db.Model(&models.Asset{}).
-		Select("path, sha256").
+		Select("path, sha256, created_at").
 		Where("repository_id = ?", repositoryID)
 	if bounded {
 		query = query.Where("path >= ? AND path < ?", bounds.Lower, bounds.Upper)

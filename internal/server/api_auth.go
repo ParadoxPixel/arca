@@ -1,8 +1,11 @@
 package server
 
 import (
+	"crypto/subtle"
+	"errors"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"arca/internal/auth"
@@ -89,16 +92,23 @@ var seedRepositories = []struct {
 	{"npm-hosted", format.NPM, models.PolicyMixed, "npm packages"},
 }
 
+// routeSetup creates the first administrator. Three things keep it from being a
+// free admin account for whoever finds the instance first: the route disappears
+// once setup has run, the caller has to present the token printed to the server
+// log, and the initialized marker is claimed inside the transaction with an
+// insert that can only succeed once, so two wizards submitting at the same
+// moment cannot both end up with an administrator.
 func (s *Server) routeSetup(writer http.ResponseWriter, request *http.Request) error {
 	initialized, err := s.store.IsInitialized()
 	if err != nil {
 		return err
 	}
 	if initialized {
-		return fail(http.StatusConflict, "This instance is already initialized")
+		return fail(http.StatusNotFound, "Not found")
 	}
 
 	var body struct {
+		SetupToken       string  `json:"setupToken"`
 		InstanceName     string  `json:"instanceName"`
 		ThemeColor       string  `json:"themeColor"`
 		WelcomeText      *string `json:"welcomeText"`
@@ -108,8 +118,16 @@ func (s *Server) routeSetup(writer http.ResponseWriter, request *http.Request) e
 		SeedRepositories *bool   `json:"seedRepositories"`
 		PublicByDefault  bool    `json:"publicByDefault"`
 	}
-	if err := decodeBody(request, &body); err != nil {
+	if err := s.decodeBody(request, &body); err != nil {
 		return err
+	}
+
+	presented := strings.TrimSpace(body.SetupToken)
+	if presented == "" {
+		presented = strings.TrimSpace(request.Header.Get("X-Setup-Token"))
+	}
+	if !s.setupTokenMatches(presented) {
+		return fail(http.StatusUnauthorized, "The setup token is missing or wrong. It is printed in the server log at startup.")
 	}
 
 	instanceName, err := requireText(body.InstanceName, "instanceName", 80)
@@ -159,6 +177,10 @@ func (s *Server) routeSetup(writer http.ResponseWriter, request *http.Request) e
 	}
 
 	err = s.store.Transaction(func(tx *store.Store) error {
+		// Claimed first, so a losing race fails before it has written anything.
+		if err := tx.ClaimInitialization(); err != nil {
+			return err
+		}
 		if err := tx.CreateUser(administrator); err != nil {
 			return err
 		}
@@ -169,9 +191,6 @@ func (s *Server) routeSetup(writer http.ResponseWriter, request *http.Request) e
 			return err
 		}
 		if err := tx.SetSetting(store.SettingWelcomeText, welcomeText); err != nil {
-			return err
-		}
-		if err := tx.SetSetting(store.SettingInitialized, "true"); err != nil {
 			return err
 		}
 		if body.SeedRepositories != nil && !*body.SeedRepositories {
@@ -192,9 +211,15 @@ func (s *Server) routeSetup(writer http.ResponseWriter, request *http.Request) e
 		}
 		return nil
 	})
+	if errors.Is(err, store.ErrAlreadyInitialized) {
+		return fail(http.StatusNotFound, "Not found")
+	}
 	if err != nil {
 		return err
 	}
+	// The token has done its job; forgetting it closes the route for good
+	// without another database read.
+	s.setupToken = ""
 
 	if err := s.startSession(writer, request, administrator.ID); err != nil {
 		return err
@@ -202,6 +227,14 @@ func (s *Server) routeSetup(writer http.ResponseWriter, request *http.Request) e
 
 	writeJSON(writer, http.StatusCreated, identityOf(administrator))
 	return nil
+}
+
+func (s *Server) setupTokenMatches(presented string) bool {
+	expected := s.setupToken
+	if expected == "" || presented == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(expected), []byte(presented)) == 1
 }
 
 func (s *Server) startSession(writer http.ResponseWriter, request *http.Request, userID string) error {
@@ -218,7 +251,7 @@ func (s *Server) routeLogin(writer http.ResponseWriter, request *http.Request) e
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
-	if err := decodeBody(request, &body); err != nil {
+	if err := s.decodeBody(request, &body); err != nil {
 		return err
 	}
 
@@ -231,14 +264,9 @@ func (s *Server) routeLogin(writer http.ResponseWriter, request *http.Request) e
 		return err
 	}
 
-	invalid := fail(http.StatusUnauthorized, "Invalid email or password")
-
-	user, err := s.store.UserByEmail(strings.ToLower(email))
+	user, err := s.resolver.Authenticate(auth.ClientAddress(request), strings.ToLower(email), password)
 	if err != nil {
-		return invalid
-	}
-	if user.Disabled || !auth.VerifyPassword(password, user.PasswordHash) {
-		return invalid
+		return authenticationFailure(writer, err)
 	}
 
 	if err := s.startSession(writer, request, user.ID); err != nil {
@@ -247,6 +275,18 @@ func (s *Server) routeLogin(writer http.ResponseWriter, request *http.Request) e
 
 	writeJSON(writer, http.StatusOK, identityOf(user))
 	return nil
+}
+
+// authenticationFailure turns a refused password into the response for it. A
+// throttled client is told how long to wait; every other failure gets the same
+// words, so the response never says which half of the pair was wrong.
+func authenticationFailure(writer http.ResponseWriter, err error) error {
+	var throttled auth.ThrottledError
+	if errors.As(err, &throttled) {
+		writer.Header().Set("Retry-After", strconv.Itoa(int(throttled.RetryAfter.Seconds())+1))
+		return fail(http.StatusTooManyRequests, "Too many failed attempts, try again later")
+	}
+	return fail(http.StatusUnauthorized, "Invalid email or password")
 }
 
 func (s *Server) routeLogout(writer http.ResponseWriter, request *http.Request) error {
@@ -278,7 +318,7 @@ func (s *Server) routeChangePassword(writer http.ResponseWriter, request *http.R
 		CurrentPassword string `json:"currentPassword"`
 		NewPassword     string `json:"newPassword"`
 	}
-	if err := decodeBody(request, &body); err != nil {
+	if err := s.decodeBody(request, &body); err != nil {
 		return err
 	}
 
@@ -291,11 +331,19 @@ func (s *Server) routeChangePassword(writer http.ResponseWriter, request *http.R
 		return err
 	}
 
+	// Confirming the current password is a password check like any other, so
+	// it draws on the same failure budget as a login would.
+	address := auth.ClientAddress(request)
+	if ok, wait := s.resolver.Guard().Allow(address, user.Email); !ok {
+		writer.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		return fail(http.StatusTooManyRequests, "Too many failed attempts, try again later")
+	}
 	fresh, err := s.store.UserByID(user.ID)
 	if err != nil {
 		return err
 	}
 	if !auth.VerifyPassword(current, fresh.PasswordHash) {
+		s.resolver.Guard().Fail(address, user.Email)
 		return fail(http.StatusUnauthorized, "Current password is incorrect")
 	}
 

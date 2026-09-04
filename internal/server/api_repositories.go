@@ -55,8 +55,15 @@ type repositoryResponse struct {
 }
 
 // serializeRepository never returns RemotePassword, which is write-only from
-// the API's point of view.
+// the API's point of view. The remote URL and username are shown to the
+// repository's administrators only: to a reader they describe an upstream and
+// an account there that are none of their concern, and on a public repository
+// that reader is anyone.
 func serializeRepository(repository models.Repository, permission, categoryName string) repositoryResponse {
+	if permission != models.PermissionAdmin {
+		repository.RemoteURL = ""
+		repository.RemoteUsername = ""
+	}
 	response := repositoryResponse{
 		ID:                 repository.ID,
 		Name:               repository.Name,
@@ -110,26 +117,39 @@ func requireRetention(value *int64, repositoryType string) (int64, error) {
 // loadAccessible resolves the repository an API path addresses, following an
 // alias left behind by a rename so a bookmarked page keeps working. Responses
 // always carry the current name back, which is how a caller learns of the move.
+//
+// Refusals follow the same policy as the repository routes: an anonymous
+// caller is asked to sign in whether the repository is private or missing, a
+// signed-in caller who cannot read it is told it does not exist, and only a
+// reader lacking a higher permission is told so.
 func (s *Server) loadAccessible(request *http.Request, required string) (*models.Repository, string, error) {
+	user := currentUser(request)
+
 	repository, _, err := s.store.ResolveRepository(routeVar(request, "name"))
 	if err != nil {
-		return nil, "", fail(http.StatusNotFound, "Repository not found")
+		return nil, "", refusal(user, "")
 	}
 
-	user := currentUser(request)
 	permission, err := s.store.EffectivePermission(repository, user)
 	if err != nil {
 		return nil, "", err
 	}
 	if !store.Satisfies(permission, required) {
-		status := http.StatusUnauthorized
-		if user != nil {
-			status = http.StatusForbidden
-		}
-		return nil, "", fail(status, "You do not have access to this repository")
+		return nil, "", refusal(user, permission)
 	}
 
 	return repository, permission, nil
+}
+
+func refusal(user *models.User, permission string) error {
+	switch {
+	case user == nil:
+		return fail(http.StatusUnauthorized, "Sign in to access this repository")
+	case permission == "":
+		return fail(http.StatusNotFound, "Repository not found")
+	default:
+		return fail(http.StatusForbidden, "You do not have access to this repository")
+	}
 }
 
 func (s *Server) loadAdministered(request *http.Request) (*models.Repository, error) {
@@ -224,7 +244,7 @@ func (s *Server) routeCreateRepository(writer http.ResponseWriter, request *http
 		CategoryID         string   `json:"categoryId"`
 		Members            []string `json:"members"`
 	}
-	if err := decodeBody(request, &body); err != nil {
+	if err := s.decodeBody(request, &body); err != nil {
 		return err
 	}
 
@@ -378,7 +398,7 @@ func (s *Server) routeUpdateRepository(writer http.ResponseWriter, request *http
 		CategoryID         *string   `json:"categoryId"`
 		Members            *[]string `json:"members"`
 	}
-	if err := decodeBody(request, &body); err != nil {
+	if err := s.decodeBody(request, &body); err != nil {
 		return err
 	}
 
@@ -698,7 +718,7 @@ func (s *Server) routeReplaceGrants(writer http.ResponseWriter, request *http.Re
 			Permission string `json:"permission"`
 		} `json:"grants"`
 	}
-	if err := decodeBody(request, &body); err != nil {
+	if err := s.decodeBody(request, &body); err != nil {
 		return err
 	}
 	if body.Grants == nil {

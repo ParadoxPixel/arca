@@ -46,7 +46,7 @@ func (s *Server) proxyPackument(request *http.Request, repository *models.Reposi
 
 	return npm.Rewrite(file, npm.RewriteOptions{
 		Package:     route.Package(),
-		Base:        publicBase(request) + "/repository/" + repository.Name,
+		Base:        s.publicBase(request) + "/repository/" + repository.Name,
 		Abbreviated: npm.WantsAbbreviated(request.Header.Get("Accept")),
 	})
 }
@@ -118,5 +118,6 @@ func writeNPMDocument(writer http.ResponseWriter, request *http.Request, documen
 
 	writer.Header().Set("Content-Type", "application/json")
 	writer.Header().Set("ETag", strconv.Quote(hex.EncodeToString(digest[:])))
+	derivedHeaders(writer.Header())
 	http.ServeContent(writer, request, "", time.Time{}, bytes.NewReader(document))
 }

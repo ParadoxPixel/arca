@@ -84,7 +84,7 @@ the repository page. A link is:
 | Pattern | which file of a version to serve |
 | Match | how to read the pattern, as a template or a regular expression |
 | Resolves to | releases, prereleases, or the latest of either |
-| Slug | the last segment of the URL, unique across the instance |
+| Slug | the last segment of the URL, unique across the instance; left empty, a random one is minted |
 | Download as | serve the file under a fixed name instead of the published one |
 
 A template is literal text with `{version}`, `{baseVersion}`, `{name}` and `{namespace}` filled in,
@@ -103,7 +103,10 @@ without giving the URL up, and downloads through it are counted.
 
 The slug is the credential. It is the whole address, so treat it the way you would treat a token:
 anyone holding it can download that file, and nothing else about the repository is reachable
-through it.
+through it. Leaving the slug empty mints a random one for that reason; a slug you choose yourself
+is only as secret as it is hard to guess, and a link into a private repository deserves a secret
+one. A disabled link, a link that resolves to nothing yet and a slug that never existed all answer
+the same `404`.
 
 ## Proxy repositories
 

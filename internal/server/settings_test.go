@@ -145,6 +145,7 @@ func TestSetupAcceptsAWelcomeText(t *testing.T) {
 	instance := newTestInstance(t)
 
 	expectStatus(t, instance.api(http.MethodPost, "/api/setup", `{
+		"setupToken": "`+instance.app.SetupToken()+`",
 		"instanceName": "welcoming",
 		"welcomeText": "# Read me first",
 		"name": "Admin",
@@ -208,6 +209,7 @@ func TestSetupAcceptsAThemeColor(t *testing.T) {
 	instance := newTestInstance(t)
 
 	expectStatus(t, instance.api(http.MethodPost, "/api/setup", `{
+		"setupToken": "`+instance.app.SetupToken()+`",
 		"instanceName": "coloured",
 		"themeColor": "#00AA55",
 		"name": "Admin",

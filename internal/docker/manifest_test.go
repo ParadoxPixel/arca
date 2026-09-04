@@ -388,3 +388,23 @@ func TestPlatformString(t *testing.T) {
 		})
 	}
 }
+
+func TestParseManifestRefusesAMediaTypeItWouldNotServe(t *testing.T) {
+	document := []byte(`{"schemaVersion":2,"mediaType":"text/html","config":{"mediaType":"application/vnd.oci.image.config.v1+json","digest":"sha256:` +
+		"0000000000000000000000000000000000000000000000000000000000000000" + `","size":1},"layers":[]}`)
+
+	if _, err := ParseManifest(document); !errors.Is(err, ErrMediaType) {
+		t.Fatalf("err = %v, want ErrMediaType", err)
+	}
+
+	for _, mediaType := range []string{MediaTypeOCIManifest, MediaTypeDockerManifest} {
+		if !IsStorableManifestMediaType(mediaType) {
+			t.Errorf("%s must be storable", mediaType)
+		}
+	}
+	for _, mediaType := range []string{"text/html", "image/svg+xml", MediaTypeDockerManifestV1, ""} {
+		if IsStorableManifestMediaType(mediaType) {
+			t.Errorf("%q must not be storable", mediaType)
+		}
+	}
+}

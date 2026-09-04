@@ -62,7 +62,7 @@ func Resolve(method, path string) Route {
 
 	switch {
 	case len(rest) == 0:
-		if method == http.MethodPut || method == http.MethodPost {
+		if method == http.MethodPut {
 			route.Kind = RoutePublish
 			return route
 		}

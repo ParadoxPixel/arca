@@ -23,6 +23,8 @@ type Client struct {
 	baseURL  string
 	username string
 	password string
+	scheme   string
+	host     string
 	http     *http.Client
 }
 
@@ -33,12 +35,38 @@ func New(baseURL, username, password string, timeout time.Duration) (*Client, er
 	}
 	parsed.Path = strings.TrimSuffix(parsed.Path, "/")
 
-	return &Client{
+	client := &Client{
 		baseURL:  parsed.String(),
 		username: username,
 		password: password,
-		http:     &http.Client{Timeout: timeout},
-	}, nil
+		scheme:   parsed.Scheme,
+		host:     parsed.Host,
+	}
+	client.http = &http.Client{Timeout: timeout, CheckRedirect: client.checkRedirect}
+	return client, nil
+}
+
+// sameOrigin reports whether a URL points at the Nexus this client was
+// configured for. Nexus reports where each asset can be downloaded from, and
+// that address is followed with the caller's credentials attached, so it has to
+// be Nexus itself and not wherever a migrated repository description happened
+// to say.
+func (c *Client) sameOrigin(target *url.URL) bool {
+	return target.Scheme == c.scheme && strings.EqualFold(target.Host, c.host)
+}
+
+// checkRedirect keeps every hop on the configured origin. Go would drop the
+// Authorization header on its own when a redirect changes host, but keeps it
+// for a subdomain and for an https-to-http downgrade, and either would hand the
+// credentials to something other than Nexus.
+func (c *Client) checkRedirect(request *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("nexus: too many redirects")
+	}
+	if !c.sameOrigin(request.URL) {
+		return fmt.Errorf("nexus: refusing to follow a redirect off %s to %s", c.host, request.URL.Redacted())
+	}
+	return nil
 }
 
 // Repository is the subset of a Nexus repository definition that a migration
@@ -191,8 +219,20 @@ func walk[T any](ctx context.Context, c *Client, path, repository, subject strin
 }
 
 // Download opens an asset for reading. The caller closes the returned stream.
+// The download address comes from Nexus's own listing, but it is only trusted
+// as far as the configured host: anything else would be this client fetching an
+// arbitrary URL, with the Nexus credentials attached, on an administrator's
+// behalf.
 func (c *Client) Download(ctx context.Context, asset Asset) (io.ReadCloser, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, asset.DownloadURL, nil)
+	target, err := url.Parse(asset.DownloadURL)
+	if err != nil {
+		return nil, fmt.Errorf("nexus: %s has an unusable download URL: %w", asset.Path, err)
+	}
+	if !c.sameOrigin(target) {
+		return nil, fmt.Errorf("nexus: %s is served from %s, which is not the configured host %s", asset.Path, target.Redacted(), c.host)
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
 	if err != nil {
 		return nil, err
 	}

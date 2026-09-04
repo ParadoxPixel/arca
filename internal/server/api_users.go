@@ -63,7 +63,7 @@ func (s *Server) routeCreateUser(writer http.ResponseWriter, request *http.Reque
 		Password string `json:"password"`
 		Role     string `json:"role"`
 	}
-	if err := decodeBody(request, &body); err != nil {
+	if err := s.decodeBody(request, &body); err != nil {
 		return err
 	}
 
@@ -122,7 +122,7 @@ func (s *Server) routeUpdateUser(writer http.ResponseWriter, request *http.Reque
 		Role     *string `json:"role"`
 		Disabled *bool   `json:"disabled"`
 	}
-	if err := decodeBody(request, &body); err != nil {
+	if err := s.decodeBody(request, &body); err != nil {
 		return err
 	}
 

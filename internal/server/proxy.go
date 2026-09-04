@@ -63,6 +63,10 @@ type proxyFetch struct {
 	Headers func(asset *models.Asset) map[string]string
 	// Limit overrides the upload ceiling, as a container layer needs.
 	Limit int64
+	// ExpectSHA256 is the digest the fetched bytes must hash to, for content that
+	// is addressed by one. An upstream that serves anything else is not cached: a
+	// wrong blob under a content address would be served, wrongly, forever.
+	ExpectSHA256 string
 }
 
 func pathFetch(path string) proxyFetch {
@@ -164,6 +168,17 @@ func (s *Server) recordCacheHit(request *http.Request, repository *models.Reposi
 		if err := s.store.MarkAssetAccessed(asset.ID); err != nil {
 			log.Errorf("recording a cache access failed: %v", err)
 		}
+	}
+}
+
+// discardAsset removes a row and its bytes together, for content that was
+// stored and then found unfit to serve.
+func (s *Server) discardAsset(asset *models.Asset) {
+	if _, err := s.store.DeleteAsset(asset.RepositoryID, asset.Path); err != nil {
+		log.Errorf("dropping a rejected asset failed: %v", err)
+	}
+	if err := s.blobs.Delete(asset.StorageKey); err != nil {
+		log.Errorf("removing a rejected asset failed: %v", err)
 	}
 }
 
@@ -278,6 +293,11 @@ func (s *Server) storeRemoteAsset(repository *models.Repository, fetch proxyFetc
 	}
 	if err != nil {
 		return err
+	}
+
+	if fetch.ExpectSHA256 != "" && asset.SHA256 != fetch.ExpectSHA256 {
+		s.discardAsset(asset)
+		return fmt.Errorf("upstream served sha256:%s where sha256:%s was requested", asset.SHA256, fetch.ExpectSHA256)
 	}
 
 	// Indexing failure is logged rather than failing the fetch: the bytes are cached

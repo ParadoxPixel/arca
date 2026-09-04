@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,10 +29,17 @@ type Server struct {
 	traffic   *trafficRecorder
 	remote    *proxy.Client
 	flight    *proxy.Flight
+	writes    *keyedMutex
 	router    *mux.Router
 	http      *http.Server
 	started   time.Time
 	migration *migrationRun
+	// setupToken is what the first-run wizard has to present. It is minted once,
+	// before the server listens, and printed to the log: whoever can read the log
+	// owns the instance, which is the only party who should.
+	setupToken string
+	// sweepGraceOverride replaces sweepGracePeriod when set, which only a test does.
+	sweepGraceOverride *time.Duration
 
 	diskMutex      sync.Mutex
 	diskUsageCache blob.Usage
@@ -61,9 +69,13 @@ func New(configuration config.Config) (*Server, error) {
 		traffic:   newTrafficRecorder(database),
 		remote:    proxy.NewClient(configuration.ProxyTimeout),
 		flight:    proxy.NewFlight(),
+		writes:    newKeyedMutex(),
 		router:    mux.NewRouter(),
 		started:   time.Now(),
 		migration: newMigrationRun(),
+	}
+	if err := server.mintSetupToken(); err != nil {
+		return nil, err
 	}
 	server.routes()
 
@@ -77,6 +89,33 @@ func New(configuration config.Config) (*Server, error) {
 
 	return server, nil
 }
+
+// mintSetupToken prepares the first-run gate on an instance that has not been
+// set up. A configured token is used as given, so an automated install can hand
+// it to the wizard; otherwise one is generated and announced in the log.
+func (s *Server) mintSetupToken() error {
+	initialized, err := s.store.IsInitialized()
+	if err != nil {
+		return err
+	}
+	if initialized {
+		return nil
+	}
+
+	if configured := strings.TrimSpace(s.config.SetupToken); configured != "" {
+		s.setupToken = configured
+		log.Warn("this instance is not set up yet; the setup wizard requires the configured setup token")
+		return nil
+	}
+
+	s.setupToken = store.NewID()
+	log.Warnf("this instance is not set up yet; the setup wizard requires this token: %s", s.setupToken)
+	return nil
+}
+
+// SetupToken is the token the setup wizard will accept, or empty once the
+// instance has been set up.
+func (s *Server) SetupToken() string { return s.setupToken }
 
 func (s *Server) Start() error {
 	log.Infof("listening on http://localhost:%d", s.config.Port)

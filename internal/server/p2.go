@@ -14,10 +14,7 @@ import (
 )
 
 func (s *Server) serveP2(writer http.ResponseWriter, request *http.Request, repository *models.Repository, path string) {
-	required := models.PermissionWrite
-	if request.Method == http.MethodGet || request.Method == http.MethodHead {
-		required = models.PermissionRead
-	}
+	required := requiredPermission(request.Method)
 	if !s.authorize(writer, request, repository, required) {
 		return
 	}
@@ -35,7 +32,7 @@ func (s *Server) serveP2(writer http.ResponseWriter, request *http.Request, repo
 	switch request.Method {
 	case http.MethodGet, http.MethodHead:
 		s.serveP2Read(writer, request, repository, path)
-	case http.MethodPut, http.MethodPost:
+	case http.MethodPut:
 		s.serveP2Upload(writer, request, repository, path)
 	case http.MethodDelete:
 		s.serveP2Delete(writer, repository, path)

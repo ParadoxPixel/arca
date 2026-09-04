@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"arca/internal/docker"
 )
@@ -20,6 +21,11 @@ type sweepReport struct {
 
 func (i *testInstance) sweep(method string) sweepReport {
 	i.t.Helper()
+
+	// Everything these tests push was pushed a moment ago, so the grace period
+	// that protects a push in flight is switched off for them.
+	noGrace := time.Duration(0)
+	i.app.sweepGraceOverride = &noGrace
 
 	body := expectStatus(i.t, i.api(method, "/api/admin/docker/sweep", ""), http.StatusOK)
 

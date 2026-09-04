@@ -110,7 +110,7 @@ func (s *Server) serveDockerManifestPut(writer http.ResponseWriter, request *htt
 	}
 
 	mediaType := manifest.MediaType
-	if declared := request.Header.Get("Content-Type"); docker.IsManifestMediaType(declared) {
+	if declared := request.Header.Get("Content-Type"); docker.IsStorableManifestMediaType(declared) {
 		mediaType = declared
 	}
 

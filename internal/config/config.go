@@ -1,9 +1,13 @@
 package config
 
 import (
+	"errors"
 	"flag"
+	"fmt"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -25,6 +29,14 @@ type Config struct {
 
 	ProxyTimeout time.Duration
 	ViteURL      string
+
+	// BaseURL is the address clients reach this server at, used wherever a
+	// response has to carry an absolute URL back. Empty derives it from the
+	// request, which trusts whatever X-Forwarded-Host the proxy in front passed on.
+	BaseURL string
+	// SetupToken gates the first-run wizard. Empty generates one at startup and
+	// prints it to the log.
+	SetupToken string
 }
 
 func Parse(arguments []string) (Config, error) {
@@ -41,6 +53,8 @@ func Parse(arguments []string) (Config, error) {
 	flags.Int64Var(&config.MaxUploadBytes, "max-upload", envInt64("MAX_UPLOAD_BYTES", DefaultMaxUploadBytes), "largest artifact accepted, in bytes")
 	flags.Int64Var(&config.MaxBlobBytes, "max-blob", envInt64("MAX_BLOB_BYTES", 0), "largest container image layer accepted, in bytes, or 0 for no limit")
 	flags.StringVar(&config.ViteURL, "vite-url", envString("VITE_URL", "http://localhost:5173"), "vite dev server to proxy in dev mode")
+	flags.StringVar(&config.BaseURL, "base-url", envString("BASE_URL", ""), "public URL this server is reached at, such as https://artifacts.example.com; derived from each request when empty")
+	flags.StringVar(&config.SetupToken, "setup-token", envString("SETUP_TOKEN", ""), "token the first-run setup wizard asks for; generated and logged when empty")
 
 	if err := flags.Parse(arguments); err != nil {
 		return Config{}, err
@@ -56,7 +70,38 @@ func Parse(arguments []string) (Config, error) {
 	if config.ProxyTimeout <= 0 {
 		config.ProxyTimeout = DefaultProxyTimeout
 	}
+
+	baseURL, err := NormalizeBaseURL(config.BaseURL)
+	if err != nil {
+		fmt.Fprintln(flags.Output(), err)
+		return Config{}, err
+	}
+	config.BaseURL = baseURL
+
 	return config, nil
+}
+
+// NormalizeBaseURL accepts an absolute http or https URL and strips what a base
+// must not carry: a query, a fragment, and a trailing slash. Empty stays empty.
+func NormalizeBaseURL(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", nil
+	}
+
+	parsed, err := url.Parse(trimmed)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return "", errors.New("base-url must be an absolute http or https URL")
+	}
+	if parsed.User != nil {
+		return "", errors.New("base-url must not carry credentials")
+	}
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	parsed.Path = strings.TrimSuffix(parsed.Path, "/")
+	parsed.RawPath = ""
+
+	return parsed.String(), nil
 }
 
 func envString(key, fallback string) string {

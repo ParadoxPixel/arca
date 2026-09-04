@@ -65,7 +65,7 @@ func (s *Server) routeCreateCategory(writer http.ResponseWriter, request *http.R
 		Name        string `json:"name"`
 		Description string `json:"description"`
 	}
-	if err := decodeBody(request, &body); err != nil {
+	if err := s.decodeBody(request, &body); err != nil {
 		return err
 	}
 
@@ -103,7 +103,7 @@ func (s *Server) routeUpdateCategory(writer http.ResponseWriter, request *http.R
 		Name        *string `json:"name"`
 		Description *string `json:"description"`
 	}
-	if err := decodeBody(request, &body); err != nil {
+	if err := s.decodeBody(request, &body); err != nil {
 		return err
 	}
 
@@ -166,7 +166,7 @@ func (s *Server) routeReorderCategories(writer http.ResponseWriter, request *htt
 	var body struct {
 		IDs *[]string `json:"ids"`
 	}
-	if err := decodeBody(request, &body); err != nil {
+	if err := s.decodeBody(request, &body); err != nil {
 		return err
 	}
 	if body.IDs == nil {

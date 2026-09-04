@@ -50,10 +50,14 @@ func cutBearer(header string) (secret string, found bool) {
 }
 
 type Resolver struct {
-	store *store.Store
+	store    *store.Store
+	guard    *Guard
+	verified *credentialCache
 }
 
-func NewResolver(database *store.Store) *Resolver { return &Resolver{store: database} }
+func NewResolver(database *store.Store) *Resolver {
+	return &Resolver{store: database, guard: NewGuard(), verified: newCredentialCache()}
+}
 
 func (r *Resolver) fromToken(secret string) *models.User {
 	user, tokenID, err := r.store.UserByTokenHash(SHA256Hex(secret))
@@ -64,9 +68,9 @@ func (r *Resolver) fromToken(secret string) *models.User {
 	return user
 }
 
-func (r *Resolver) fromPassword(login, password string) *models.User {
-	user, err := r.store.UserByEmail(login)
-	if err != nil || user.Disabled || !VerifyPassword(password, user.PasswordHash) {
+func (r *Resolver) fromPassword(address, login, password string) *models.User {
+	user, err := r.Authenticate(address, strings.ToLower(login), password)
+	if err != nil {
 		return nil
 	}
 	return user
@@ -95,7 +99,7 @@ func (r *Resolver) Resolve(request *http.Request) *models.User {
 		if strings.HasPrefix(secret, TokenPrefix) {
 			return r.fromToken(secret)
 		}
-		return r.fromPassword(login, secret)
+		return r.fromPassword(ClientAddress(request), login, secret)
 	}
 
 	if cookie, err := request.Cookie(SessionCookie); err == nil {

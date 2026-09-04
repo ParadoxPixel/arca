@@ -54,7 +54,7 @@ func (s *Server) routeUpdateSettings(writer http.ResponseWriter, request *http.R
 		ThemeColor   *string `json:"themeColor"`
 		WelcomeText  *string `json:"welcomeText"`
 	}
-	if err := decodeBody(request, &body); err != nil {
+	if err := s.decodeBody(request, &body); err != nil {
 		return err
 	}
 

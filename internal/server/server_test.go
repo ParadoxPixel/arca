@@ -126,6 +126,7 @@ func (i *testInstance) setup() {
 	i.t.Helper()
 
 	response := i.api(http.MethodPost, "/api/setup", `{
+		"setupToken": "`+i.app.SetupToken()+`",
 		"instanceName": "test-nexus",
 		"name": "Admin",
 		"email": "`+administratorEmail+`",
@@ -184,6 +185,7 @@ func TestBootstrapReportsUninitializedInstance(t *testing.T) {
 
 func TestSetupSeedsRepositoriesAndSignsIn(t *testing.T) {
 	instance := newTestInstance(t)
+	token := instance.app.SetupToken()
 	instance.setup()
 
 	body := expectStatus(t, instance.api(http.MethodGet, "/api/repositories", ""), http.StatusOK)
@@ -220,7 +222,8 @@ func TestSetupSeedsRepositoriesAndSignsIn(t *testing.T) {
 		})
 	}
 
-	expectStatus(t, instance.api(http.MethodPost, "/api/setup", `{"instanceName":"x","name":"y","email":"a@b.co","password":"0123456789"}`), http.StatusConflict)
+	// Once set up, the route is gone for everyone, token or not.
+	expectStatus(t, instance.api(http.MethodPost, "/api/setup", `{"setupToken":"`+token+`","instanceName":"x","name":"y","email":"a@b.co","password":"0123456789"}`), http.StatusNotFound)
 }
 
 func TestRepositoryFormatDefaultsAndIsImmutable(t *testing.T) {
@@ -273,7 +276,11 @@ func TestSetupRejectsInvalidInput(t *testing.T) {
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
 			instance := newTestInstance(t)
-			expectStatus(t, instance.api(http.MethodPost, "/api/setup", testCase.body), http.StatusBadRequest)
+			body := testCase.body
+			if json.Valid([]byte(body)) {
+				body = `{"setupToken":"` + instance.app.SetupToken() + `",` + body[1:]
+			}
+			expectStatus(t, instance.api(http.MethodPost, "/api/setup", body), http.StatusBadRequest)
 		})
 	}
 }

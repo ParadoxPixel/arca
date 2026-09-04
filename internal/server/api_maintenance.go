@@ -67,7 +67,7 @@ func (s *Server) routeMigrationPreview(writer http.ResponseWriter, request *http
 	}
 
 	var body migrationRequest
-	if err := decodeBody(request, &body); err != nil {
+	if err := s.decodeBody(request, &body); err != nil {
 		return err
 	}
 
@@ -111,7 +111,7 @@ func (s *Server) routeStartMigration(writer http.ResponseWriter, request *http.R
 	}
 
 	var body migrationRequest
-	if err := decodeBody(request, &body); err != nil {
+	if err := s.decodeBody(request, &body); err != nil {
 		return err
 	}
 

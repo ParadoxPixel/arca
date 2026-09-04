@@ -14,7 +14,8 @@ import { cn } from '@/lib/utils'
 const STEPS = [
   {
     title: 'Instance',
-    blurb: 'Name this deployment and pick the accent it is branded with.',
+    blurb:
+      'Prove you run this server, then name the deployment and pick the accent it is branded with.',
   },
   {
     title: 'Welcome',
@@ -30,6 +31,7 @@ const STEPS = [
 export function SetupRoute() {
   const session = useSession()
   const [step, setStep] = useState(0)
+  const [setupToken, setSetupToken] = useState('')
   const [instanceName, setInstanceName] = useState('arca')
   const [themeColor, setThemeColor] = useState('#4f46e5')
   const [welcomeText, setWelcomeText] = useState(session.welcomeText)
@@ -50,7 +52,7 @@ export function SetupRoute() {
 
   const stepValid =
     step === 0
-      ? instanceName.trim().length > 0 && isThemeColor(themeColor)
+      ? setupToken.trim().length > 0 && instanceName.trim().length > 0 && isThemeColor(themeColor)
       : step === 2
         ? name.trim().length > 0 &&
           /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) &&
@@ -69,6 +71,7 @@ export function SetupRoute() {
     setError(null)
     try {
       await post('/setup', {
+        setupToken: setupToken.trim(),
         instanceName: instanceName.trim(),
         themeColor,
         welcomeText,
@@ -82,6 +85,7 @@ export function SetupRoute() {
       navigate('/', { replace: true })
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : 'Setup could not be completed')
+      if (cause instanceof ApiError && cause.status === 401) setStep(0)
     } finally {
       setBusy(false)
     }
@@ -140,12 +144,24 @@ export function SetupRoute() {
 
           {step === 0 ? (
             <div className="space-y-5">
+              <Field
+                label="Setup token"
+                hint="Printed in the server log when it started, or set with SETUP_TOKEN. It stops anyone who finds this page first from becoming the administrator."
+              >
+                <Input
+                  value={setupToken}
+                  onChange={(event) => setSetupToken(event.target.value)}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="font-mono"
+                  autoFocus
+                />
+              </Field>
               <Field label="Instance name">
                 <Input
                   value={instanceName}
                   onChange={(event) => setInstanceName(event.target.value)}
                   placeholder="acme artifacts"
-                  autoFocus
                 />
               </Field>
               <ThemeColorField

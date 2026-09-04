@@ -22,27 +22,40 @@ import (
 )
 
 func (s *Server) serveMaven(writer http.ResponseWriter, request *http.Request, repository *models.Repository, path string) {
-	required := models.PermissionWrite
-	if request.Method == http.MethodGet || request.Method == http.MethodHead {
-		required = models.PermissionRead
-	}
-	if !s.authorize(writer, request, repository, required) {
+	if !s.authorize(writer, request, repository, requiredPermission(request.Method)) {
 		return
 	}
-	if repository.IsProxy() && required != models.PermissionRead {
+	if repository.IsProxy() && request.Method != http.MethodGet && request.Method != http.MethodHead {
 		plain(writer, http.StatusMethodNotAllowed, "Proxy repositories are read-only")
 		return
 	}
 
+	// Only PUT uploads. Every client deploys with it, and accepting POST as well
+	// would let a form on another site, submitted from a browser that has cached
+	// Basic credentials for this host, publish an artifact.
 	switch request.Method {
 	case http.MethodGet, http.MethodHead:
 		s.serveMavenRead(writer, request, repository, path)
-	case http.MethodPut, http.MethodPost:
+	case http.MethodPut:
 		s.serveMavenUpload(writer, request, repository, path)
 	case http.MethodDelete:
 		s.serveMavenDelete(writer, repository, path)
 	default:
 		plain(writer, http.StatusMethodNotAllowed, "Method Not Allowed")
+	}
+}
+
+// requiredPermission maps a method onto the grant it needs. A delete can take a
+// whole tree with it, which is a repository administrator's decision rather than
+// a publisher's, so it asks for more than a write.
+func requiredPermission(method string) string {
+	switch method {
+	case http.MethodGet, http.MethodHead:
+		return models.PermissionRead
+	case http.MethodDelete:
+		return models.PermissionAdmin
+	default:
+		return models.PermissionWrite
 	}
 }
 

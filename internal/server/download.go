@@ -38,8 +38,10 @@ func (s *Server) handleDownload(writer http.ResponseWriter, request *http.Reques
 		plain(writer, http.StatusInternalServerError, "Internal Server Error")
 		return
 	}
+	// Answered in the same words as an unknown slug: the difference would tell a
+	// guesser which slugs exist.
 	if resolved == nil {
-		plain(writer, http.StatusNotFound, "No published version matches this link yet")
+		plain(writer, http.StatusNotFound, "Not Found")
 		return
 	}
 

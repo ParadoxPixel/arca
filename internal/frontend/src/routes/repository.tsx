@@ -356,8 +356,15 @@ export function RepositoryRoute() {
 
         {data.type === 'proxy' ? (
           <p className="text-sm text-muted-foreground">
-            Mirrors <code className="font-mono text-[13px]">{data.remoteUrl}</code>. Artifacts are
-            cached on first request, and the tree below shows what has been cached so far.
+            {data.remoteUrl ? (
+              <>
+                Mirrors <code className="font-mono text-[13px]">{data.remoteUrl}</code>.{' '}
+              </>
+            ) : (
+              'Mirrors an upstream repository. '
+            )}
+            Artifacts are cached on first request, and the tree below shows what has been cached
+            so far.
             {data.cacheRetentionDays > 0
               ? ` Cached files are deleted after ${data.cacheRetentionDays} days without a download.`
               : ''}

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -91,10 +93,15 @@ func (s *Server) authorizeNPM(writer http.ResponseWriter, request *http.Request,
 		return true
 	}
 
-	if user == nil {
+	// The same policy as refuseRepository: nobody who cannot read the
+	// repository learns that it exists.
+	switch {
+	case user == nil:
 		writer.Header().Set("WWW-Authenticate", `Bearer realm="`+s.store.InstanceName()+`"`)
 		npmError(writer, http.StatusUnauthorized, "You must be logged in to do that")
-	} else {
+	case permission == "":
+		npmError(writer, http.StatusNotFound, "Not found")
+	default:
 		npmError(writer, http.StatusForbidden, "You do not have permission to do that")
 	}
 	return false
@@ -126,9 +133,15 @@ func (s *Server) serveNPMLogin(writer http.ResponseWriter, request *http.Request
 		login = route.Username
 	}
 
-	user, err := s.store.UserByEmail(login)
-	if err != nil || user.Disabled || !auth.VerifyPassword(body.Password, user.PasswordHash) {
-		log.Warnf("rejected an npm login for %q", login)
+	user, err := s.resolver.Authenticate(auth.ClientAddress(request), strings.ToLower(login), body.Password)
+	if err != nil {
+		log.Warnf("rejected an npm login for %q: %v", login, err)
+		var throttled auth.ThrottledError
+		if errors.As(err, &throttled) {
+			writer.Header().Set("Retry-After", strconv.Itoa(int(throttled.RetryAfter.Seconds())+1))
+			npmError(writer, http.StatusTooManyRequests, "Too many failed attempts, try again later")
+			return
+		}
 		npmError(writer, http.StatusUnauthorized, "Incorrect username or password")
 		return
 	}
@@ -173,7 +186,7 @@ func (s *Server) loadPackument(request *http.Request, repository *models.Reposit
 		return npm.Packument{}, err
 	}
 
-	base := publicBase(request) + "/repository/" + repository.Name + "/"
+	base := s.publicBase(request) + "/repository/" + repository.Name + "/"
 	packument := npm.Packument{
 		Namespace: route.Namespace,
 		Name:      route.Name,
@@ -266,7 +279,7 @@ func (s *Server) serveNPMPackument(writer http.ResponseWriter, request *http.Req
 	}
 
 	writer.Header().Set("Content-Type", "application/json")
-	writer.Header().Set("Cache-Control", "no-cache")
+	derivedHeaders(writer.Header())
 	writer.Write(document)
 }
 
@@ -353,6 +366,10 @@ func (s *Server) serveNPMPublish(writer http.ResponseWriter, request *http.Reque
 	}
 
 	tarballPath := npm.TarballPath(published.Namespace, published.Name, published.Version)
+
+	// The existence check and the store are one step as far as any other
+	// publish of the same version is concerned.
+	defer s.writes.lock(repository.ID + "/" + tarballPath)()
 
 	// A published version is immutable regardless of allowRedeploy: npm clients
 	// cache by integrity, so a replaced tarball is never picked up.

@@ -34,7 +34,7 @@ func (s *Server) serveNPMSearch(writer http.ResponseWriter, request *http.Reques
 	}
 
 	summaries := limitSummaries(groupComponents(records), size)
-	base := publicBase(request) + "/repository/" + repository.Name + "/"
+	base := s.publicBase(request) + "/repository/" + repository.Name + "/"
 
 	objects := make([]map[string]any, 0, len(summaries))
 	for _, summary := range summaries {

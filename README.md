@@ -38,7 +38,8 @@ make build      # builds the frontend, then the binary into bin/arca
 ./bin/arca
 ```
 
-Open <http://localhost:8080> and complete the setup wizard. There is a
+Open <http://localhost:8080> and complete the setup wizard. It asks for the setup token the
+server printed to its log on startup, so nobody else can claim a fresh instance. There is a
 [docker compose example](https://pixelib.github.io/arca/deploying#docker) in the docs.
 
 ## Docs
