@@ -40,6 +40,12 @@ type Server struct {
 	// before the server listens, and printed to the log: whoever can read the log
 	// owns the instance, which is the only party who should.
 	setupToken string
+	// setupIdentities holds identities verified at the provider while the
+	// instance is still uninitialized, keyed by the secret in their
+	// cn_setup_identity cookie, until the wizard makes one the administrator.
+	// They stay in memory so nothing touches the database before setup; a
+	// restart just means signing in again.
+	setupIdentities sync.Map // string -> auth.OIDCClaims
 	// sweepGraceOverride replaces sweepGracePeriod when set, which only a test does.
 	sweepGraceOverride *time.Duration
 

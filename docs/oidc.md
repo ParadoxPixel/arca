@@ -44,6 +44,19 @@ The display name comes from the provider when the account is created and is not 
 so a name changed in Arca stays. The email is updated at every sign-in, unless another account
 already uses the new address.
 
+## Setting up with single sign-on
+
+With OIDC configured, the administrator step of the first-run wizard offers **Continue with ...**
+next to the name, email and password fields. Signing in there makes that provider account the
+administrator, so an instance can be set up and managed without any password account. The setup
+token is still required.
+
+With `OIDC_ADMIN_GROUPS` set, only a member of one of those groups can set the instance up through
+the provider. Anyone else is turned away and can still use the password fields.
+
+Until setup is finished, sign-in through the provider creates no accounts: it only fills in the
+wizard's administrator step.
+
 ## Authentik example
 
 In Authentik, create an **OAuth2/OpenID Provider** with a confidential client, set its redirect URI

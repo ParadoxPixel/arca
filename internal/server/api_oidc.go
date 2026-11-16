@@ -20,6 +20,8 @@ const (
 	oidcCookie     = "cn_oidc"
 	oidcCookiePath = "/api/auth/oidc"
 	oidcCookieTTL  = 10 * 60 // seconds
+
+	setupIdentityCookie = "cn_setup_identity"
 )
 
 // oidcRefusal is a sign-in turned away for a reason the login page explains;
@@ -45,6 +47,33 @@ func setOIDCCookie(writer http.ResponseWriter, request *http.Request, value stri
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   maxAge,
 	})
+}
+
+// setSetupIdentityCookie hands the browser the secret of an identity waiting
+// for setup. It lasts the browser session; a negative maxAge clears it.
+func setSetupIdentityCookie(writer http.ResponseWriter, request *http.Request, value string, maxAge int) {
+	http.SetCookie(writer, &http.Cookie{
+		Name:     setupIdentityCookie,
+		Value:    value,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   auth.IsSecure(request),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   maxAge,
+	})
+}
+
+// setupIdentity returns the identity the request's setup cookie points at.
+func (s *Server) setupIdentity(request *http.Request) (auth.OIDCClaims, bool) {
+	cookie, err := request.Cookie(setupIdentityCookie)
+	if err != nil {
+		return auth.OIDCClaims{}, false
+	}
+	claims, ok := s.setupIdentities.Load(cookie.Value)
+	if !ok {
+		return auth.OIDCClaims{}, false
+	}
+	return claims.(auth.OIDCClaims), true
 }
 
 // oidcFailed sends the browser back to the login page with a code it can show,
@@ -85,6 +114,12 @@ func (s *Server) routeOIDCCallback(writer http.ResponseWriter, request *http.Req
 	}
 
 	if err := s.completeOIDCLogin(writer, request); err != nil {
+		// A refused sign-in must not leave an earlier one waiting for setup:
+		// the provider may since have taken that person out of a group.
+		if cookie, err := request.Cookie(setupIdentityCookie); err == nil {
+			s.setupIdentities.Delete(cookie.Value)
+			setSetupIdentityCookie(writer, request, "", -1)
+		}
 		oidcFailed(writer, request, err)
 		return nil
 	}
@@ -117,6 +152,34 @@ func (s *Server) completeOIDCLogin(writer http.ResponseWriter, request *http.Req
 	if err != nil {
 		return err
 	}
+	if err := s.checkAllowedGroups(claims); err != nil {
+		return err
+	}
+
+	initialized, err := s.store.IsInitialized()
+	if err != nil {
+		return err
+	}
+	if !initialized {
+		// Before setup nothing is provisioned, which is what keeps sign-in
+		// through the provider from creating accounts on an uninitialized
+		// instance. The identity waits for the wizard to make it the
+		// administrator instead. With admin groups configured only a member
+		// may do that, so the role synced at later sign-ins never disagrees
+		// with what setup granted.
+		if admins := s.config.OIDC.AdminGroups; len(admins) > 0 && !inAnyGroup(claims.Groups, admins) {
+			return oidcRefusal{"not_admin", claims.Email + " is in none of the admin groups and cannot set up the instance"}
+		}
+		// Signing in again replaces the identity this browser parked before.
+		if cookie, err := request.Cookie(setupIdentityCookie); err == nil {
+			s.setupIdentities.Delete(cookie.Value)
+		}
+		secret := store.NewID()
+		s.setupIdentities.Store(secret, claims)
+		setSetupIdentityCookie(writer, request, secret, 0)
+		return nil
+	}
+
 	user, err := s.provisionOIDCUser(claims)
 	if err != nil {
 		return err
@@ -128,15 +191,22 @@ func inAnyGroup(groups, wanted []string) bool {
 	return slices.ContainsFunc(groups, func(group string) bool { return slices.Contains(wanted, group) })
 }
 
+// checkAllowedGroups refuses a sign-in in none of the allowed groups, when
+// those are configured.
+func (s *Server) checkAllowedGroups(claims auth.OIDCClaims) error {
+	allowed := s.config.OIDC.AllowedGroups
+	if len(allowed) > 0 && !inAnyGroup(claims.Groups, allowed) {
+		return oidcRefusal{"denied", claims.Email + " is in none of the allowed groups"}
+	}
+	return nil
+}
+
 // provisionOIDCUser finds or creates the account behind a verified sign-in and
 // brings its email and, when admin groups are configured, its role in line with
 // what the provider says. The name is taken from the provider only when the
 // account is created, so a name changed in Arca stays.
 func (s *Server) provisionOIDCUser(claims auth.OIDCClaims) (*models.User, error) {
 	settings := s.config.OIDC
-	if len(settings.AllowedGroups) > 0 && !inAnyGroup(claims.Groups, settings.AllowedGroups) {
-		return nil, oidcRefusal{"denied", claims.Email + " is in none of the allowed groups"}
-	}
 
 	var user *models.User
 	err := s.store.Transaction(func(tx *store.Store) error {

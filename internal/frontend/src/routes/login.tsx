@@ -7,10 +7,12 @@ import { ErrorBlock } from '@/components/ui/feedback'
 import { ApiError, post } from '@/lib/api'
 import { useRefreshSession, useSession } from '@/lib/session'
 
-// What the OIDC callback means by each ?error= code it redirects here with.
-const oidcErrors: Record<string, string> = {
+// What the OIDC callback means by each ?error= code it redirects here with. The
+// setup wizard shows them too, since App sends /login there before setup.
+export const oidcErrors: Record<string, string> = {
   denied: 'Your account is not allowed to sign in here.',
   email_taken: 'An account with your email already exists. Sign in with your password instead.',
+  not_admin: 'Only members of an administrator group can set up this instance.',
   failed: 'Single sign-on could not be completed. Try again.',
 }
 

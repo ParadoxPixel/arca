@@ -129,6 +129,8 @@ export interface Bootstrap {
   build: Build
   user: User | null
   oidc: { name: string } | null
+  // Who signed in through the provider before setup, to become the administrator.
+  setupIdentity: { name: string; email: string } | null
 }
 
 export interface InstanceSettings {

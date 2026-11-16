@@ -147,7 +147,9 @@ func person(subject, email string, groups ...string) map[string]any {
 	return map[string]any{"sub": subject, "email": email, "name": "Ada Lovelace", "groups": groups}
 }
 
-func newOIDCInstance(t *testing.T, idp *fakeIdP, adjust func(*config.OIDC)) *testInstance {
+// newUninitializedOIDCInstance starts an instance that signs in through idp
+// and has not run setup yet.
+func newUninitializedOIDCInstance(t *testing.T, idp *fakeIdP, adjust func(*config.OIDC)) *testInstance {
 	t.Helper()
 
 	settings := config.OIDC{
@@ -162,6 +164,16 @@ func newOIDCInstance(t *testing.T, idp *fakeIdP, adjust func(*config.OIDC)) *tes
 		adjust(&settings)
 	}
 	return newConfiguredInstance(t, config.Config{OIDC: settings})
+}
+
+// newOIDCInstance is newUninitializedOIDCInstance after setup has run with the
+// password administrator.
+func newOIDCInstance(t *testing.T, idp *fakeIdP, adjust func(*config.OIDC)) *testInstance {
+	t.Helper()
+
+	instance := newUninitializedOIDCInstance(t, idp, adjust)
+	instance.setup()
+	return instance
 }
 
 func (i *testInstance) userByEmail(email string) *models.User {
@@ -246,7 +258,6 @@ func TestOIDCMatchesReturningUserBySubject(t *testing.T) {
 func TestOIDCAdminGroupsPromoteAndDemote(t *testing.T) {
 	idp := newFakeIdP(t)
 	instance := newOIDCInstance(t, idp, func(settings *config.OIDC) { settings.AdminGroups = []string{"admins"} })
-	instance.setup()
 
 	idp.signIn(instance, person("sub-1", "ada@example.com", "admins"))
 	if role := instance.userByEmail("ada@example.com").Role; role != models.RoleAdmin {
@@ -259,11 +270,14 @@ func TestOIDCAdminGroupsPromoteAndDemote(t *testing.T) {
 	}
 }
 
+// An administrator set up through the provider is the only one, so leaving the
+// admin groups afterwards does not demote them.
 func TestOIDCKeepsLastAdmin(t *testing.T) {
 	idp := newFakeIdP(t)
-	instance := newOIDCInstance(t, idp, func(settings *config.OIDC) { settings.AdminGroups = []string{"admins"} })
+	instance := newUninitializedOIDCInstance(t, idp, func(settings *config.OIDC) { settings.AdminGroups = []string{"admins"} })
 
 	idp.signIn(instance, person("sub-1", "ada@example.com", "admins"))
+	expectStatus(t, instance.api(http.MethodPost, "/api/setup", oidcSetupBody(instance.app.SetupToken())), http.StatusCreated)
 	idp.signIn(instance, person("sub-1", "ada@example.com"))
 	if role := instance.userByEmail("ada@example.com").Role; role != models.RoleAdmin {
 		t.Fatalf("the only administrator was demoted to %s", role)
@@ -275,8 +289,8 @@ func TestOIDCAllowedGroups(t *testing.T) {
 	instance := newOIDCInstance(t, idp, func(settings *config.OIDC) { settings.AllowedGroups = []string{"staff"} })
 
 	expectLocation(t, idp.signIn(instance, person("sub-1", "ada@example.com", "guests")), "/login?error=denied")
-	if count, _ := instance.app.store.CountUsers(); count != 0 {
-		t.Fatalf("a denied sign-in created %d users", count)
+	if count, _ := instance.app.store.CountUsers(); count != 1 {
+		t.Fatalf("a denied sign-in left %d users, want only the administrator", count)
 	}
 
 	// A single group may arrive as a plain string rather than an array.
@@ -288,12 +302,10 @@ func TestOIDCAllowedGroups(t *testing.T) {
 func TestOIDCEmailCollision(t *testing.T) {
 	idp := newFakeIdP(t)
 	instance := newOIDCInstance(t, idp, nil)
-	instance.setup()
 
 	expectLocation(t, idp.signIn(instance, person("sub-1", administratorEmail)), "/login?error=email_taken")
 
 	linking := newOIDCInstance(t, idp, func(settings *config.OIDC) { settings.LinkExisting = true })
-	linking.setup()
 	expectLocation(t, idp.signIn(linking, person("sub-1", administratorEmail)), "/")
 
 	linked, err := linking.app.store.UserByIdentity(idp.server.URL, "sub-1")
@@ -323,8 +335,8 @@ func TestOIDCStateMismatch(t *testing.T) {
 	idp.claims["nonce"] = authorize.Get("nonce")
 
 	expectLocation(t, idp.finish(instance, "forged"), "/login?error=failed")
-	if count, _ := instance.app.store.CountUsers(); count != 0 {
-		t.Fatalf("a forged state created %d users", count)
+	if count, _ := instance.app.store.CountUsers(); count != 1 {
+		t.Fatalf("a forged state left %d users, want only the administrator", count)
 	}
 }
 
@@ -374,5 +386,147 @@ func TestOIDCRoutesNotFoundWhenUnconfigured(t *testing.T) {
 	}
 	if value, present := payload["oidc"]; !present || value != nil {
 		t.Fatalf("oidc = %v, present %v; want null", value, present)
+	}
+}
+
+// oidcSetupBody is a setup request that leaves the administrator to the
+// identity signed in through the provider.
+func oidcSetupBody(token string) string {
+	return `{"setupToken": "` + token + `", "instanceName": "test-nexus", "email": "ada@example.com"}`
+}
+
+// A second sign-in replaces the waiting identity; the wizard that still shows
+// the first one must not make the second the administrator.
+func TestOIDCSetupRefusesSwappedIdentity(t *testing.T) {
+	idp := newFakeIdP(t)
+	instance := newUninitializedOIDCInstance(t, idp, nil)
+	idp.signIn(instance, person("sub-1", "ada@example.com"))
+	idp.signIn(instance, person("sub-2", "bob@example.com"))
+
+	expectStatus(t, instance.api(http.MethodPost, "/api/setup", oidcSetupBody(instance.app.SetupToken())), http.StatusConflict)
+	if initialized, _ := instance.app.store.IsInitialized(); initialized {
+		t.Fatal("setup went through with a different identity than the wizard showed")
+	}
+}
+
+// setupIdentityOf returns the setupIdentity bootstrap reports, nil when null.
+func (i *testInstance) setupIdentityOf(response *http.Response) map[string]string {
+	i.t.Helper()
+
+	body := expectStatus(i.t, response, http.StatusOK)
+	var payload struct {
+		SetupIdentity map[string]string `json:"setupIdentity"`
+	}
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		i.t.Fatalf("decoding bootstrap: %v", err)
+	}
+	return payload.SetupIdentity
+}
+
+func TestOIDCBeforeSetupCreatesNoUser(t *testing.T) {
+	idp := newFakeIdP(t)
+	instance := newUninitializedOIDCInstance(t, idp, nil)
+
+	expectLocation(t, idp.signIn(instance, person("sub-1", "ada@example.com")), "/")
+	if count, _ := instance.app.store.CountUsers(); count != 0 {
+		t.Fatalf("a sign-in before setup created %d users", count)
+	}
+
+	got := instance.setupIdentityOf(instance.api(http.MethodGet, "/api/bootstrap", ""))
+	if got["name"] != "Ada Lovelace" || got["email"] != "ada@example.com" {
+		t.Fatalf("setupIdentity = %v", got)
+	}
+	if got := instance.setupIdentityOf(instance.doAnonymously(instance.request(http.MethodGet, "/api/bootstrap", ""))); got != nil {
+		t.Fatalf("setupIdentity without the cookie = %v, want null", got)
+	}
+}
+
+func TestOIDCSetupCreatesAdministrator(t *testing.T) {
+	idp := newFakeIdP(t)
+	instance := newUninitializedOIDCInstance(t, idp, nil)
+	idp.signIn(instance, person("sub-1", "ada@example.com"))
+
+	expectStatus(t, instance.api(http.MethodPost, "/api/setup", oidcSetupBody(instance.app.SetupToken())), http.StatusCreated)
+	administrator := instance.userByEmail("ada@example.com")
+	if administrator.Role != models.RoleAdmin || administrator.Name != "Ada Lovelace" || administrator.PasswordHash != "" {
+		t.Fatalf("unexpected administrator: %+v", administrator)
+	}
+
+	expectLocation(t, idp.signIn(instance, person("sub-1", "ada@example.com")), "/")
+	if count, _ := instance.app.store.CountUsers(); count != 1 {
+		t.Fatalf("signing in again left %d users, want 1", count)
+	}
+	linked, err := instance.app.store.UserByIdentity(idp.server.URL, "sub-1")
+	if err != nil || linked == nil || linked.ID != administrator.ID {
+		t.Fatalf("expected the identity to belong to the administrator, got %+v (%v)", linked, err)
+	}
+
+	response := instance.doAnonymously(instance.request(http.MethodPost, "/api/auth/login",
+		`{"email": "ada@example.com", "password": "anything-at-all"}`))
+	expectStatus(t, response, http.StatusUnauthorized)
+}
+
+func TestOIDCSetupRequiresToken(t *testing.T) {
+	idp := newFakeIdP(t)
+	instance := newUninitializedOIDCInstance(t, idp, nil)
+	idp.signIn(instance, person("sub-1", "ada@example.com"))
+
+	for _, token := range []string{"", "wrong"} {
+		expectStatus(t, instance.api(http.MethodPost, "/api/setup", oidcSetupBody(token)), http.StatusUnauthorized)
+	}
+	if initialized, _ := instance.app.store.IsInitialized(); initialized {
+		t.Fatal("setup without the token initialized the instance")
+	}
+}
+
+func TestOIDCBeforeSetupAllowedGroups(t *testing.T) {
+	idp := newFakeIdP(t)
+	instance := newUninitializedOIDCInstance(t, idp, func(settings *config.OIDC) { settings.AllowedGroups = []string{"staff"} })
+
+	expectLocation(t, idp.signIn(instance, person("sub-1", "ada@example.com", "guests")), "/login?error=denied")
+	if got := instance.setupIdentityOf(instance.api(http.MethodGet, "/api/bootstrap", "")); got != nil {
+		t.Fatalf("a denied sign-in left setupIdentity %v", got)
+	}
+}
+
+// With admin groups configured only a member may set the instance up through
+// the provider, so the role synced at later sign-ins matches what setup granted.
+func TestOIDCBeforeSetupRequiresAdminGroup(t *testing.T) {
+	idp := newFakeIdP(t)
+	instance := newUninitializedOIDCInstance(t, idp, func(settings *config.OIDC) { settings.AdminGroups = []string{"admins"} })
+
+	expectLocation(t, idp.signIn(instance, person("sub-1", "ada@example.com", "staff")), "/login?error=not_admin")
+	if got := instance.setupIdentityOf(instance.api(http.MethodGet, "/api/bootstrap", "")); got != nil {
+		t.Fatalf("a sign-in outside the admin groups left setupIdentity %v", got)
+	}
+
+	expectLocation(t, idp.signIn(instance, person("sub-1", "ada@example.com", "admins")), "/")
+	if got := instance.setupIdentityOf(instance.api(http.MethodGet, "/api/bootstrap", "")); got["email"] != "ada@example.com" {
+		t.Fatalf("setupIdentity = %v for an admin group member", got)
+	}
+
+	// Taken out of the group since, the earlier sign-in no longer counts.
+	expectLocation(t, idp.signIn(instance, person("sub-1", "ada@example.com", "staff")), "/login?error=not_admin")
+	expectStatus(t, instance.api(http.MethodPost, "/api/setup", oidcSetupBody(instance.app.SetupToken())), http.StatusBadRequest)
+	if initialized, _ := instance.app.store.IsInitialized(); initialized {
+		t.Fatal("a refused sign-in still became the administrator")
+	}
+}
+
+// Signing in again before setup replaces the parked identity rather than
+// leaving the earlier one in memory.
+func TestOIDCBeforeSetupKeepsOneParkedIdentity(t *testing.T) {
+	idp := newFakeIdP(t)
+	instance := newUninitializedOIDCInstance(t, idp, nil)
+	idp.signIn(instance, person("sub-1", "ada@example.com"))
+	idp.signIn(instance, person("sub-1", "ada@example.com"))
+
+	parked := 0
+	instance.app.setupIdentities.Range(func(_, _ any) bool {
+		parked++
+		return true
+	})
+	if parked != 1 {
+		t.Fatalf("%d identities are parked after signing in twice, want 1", parked)
 	}
 }
