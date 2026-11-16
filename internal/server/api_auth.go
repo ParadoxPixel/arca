@@ -69,6 +69,11 @@ func (s *Server) routeBootstrap(writer http.ResponseWriter, request *http.Reques
 		welcomeText = store.DefaultWelcomeText
 	}
 
+	var oidc any
+	if s.oidc != nil {
+		oidc = map[string]string{"name": s.config.OIDC.Name}
+	}
+
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"initialized":  initialized,
 		"instanceName": s.store.InstanceName(),
@@ -77,6 +82,7 @@ func (s *Server) routeBootstrap(writer http.ResponseWriter, request *http.Reques
 		"logoUrl":      logoURL(s.store.Logo()),
 		"build":        version.Current(),
 		"user":         identityOf(currentUser(request)),
+		"oidc":         oidc,
 	})
 	return nil
 }

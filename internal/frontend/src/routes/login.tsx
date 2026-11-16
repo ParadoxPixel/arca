@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Logo } from '@/components/brand'
 import { Button } from '@/components/ui/button'
 import { Field, Input } from '@/components/ui/input'
@@ -7,11 +7,19 @@ import { ErrorBlock } from '@/components/ui/feedback'
 import { ApiError, post } from '@/lib/api'
 import { useRefreshSession, useSession } from '@/lib/session'
 
+// What the OIDC callback means by each ?error= code it redirects here with.
+const oidcErrors: Record<string, string> = {
+  denied: 'Your account is not allowed to sign in here.',
+  email_taken: 'An account with your email already exists. Sign in with your password instead.',
+  failed: 'Single sign-on could not be completed. Try again.',
+}
+
 export function LoginRoute() {
-  const { instanceName } = useSession()
+  const { instanceName, oidc } = useSession()
+  const [searchParams] = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(() => oidcErrors[searchParams.get('error') ?? ''] ?? null)
   const [busy, setBusy] = useState(false)
   const refresh = useRefreshSession()
   const navigate = useNavigate()
@@ -66,6 +74,12 @@ export function LoginRoute() {
             {busy ? 'Signing in' : 'Sign in'}
           </Button>
         </form>
+
+        {oidc ? (
+          <Button asChild variant="outline" size="lg" className="w-full">
+            <a href="/api/auth/oidc/login">Sign in with {oidc.name}</a>
+          </Button>
+        ) : null}
 
         <p className="text-center text-sm text-muted-foreground">
           <Link to="/" className="hover:text-foreground">

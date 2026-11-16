@@ -34,6 +34,8 @@ type Server struct {
 	http      *http.Server
 	started   time.Time
 	migration *migrationRun
+	// oidc is nil unless single sign-on is configured.
+	oidc *auth.OIDC
 	// setupToken is what the first-run wizard has to present. It is minted once,
 	// before the server listens, and printed to the log: whoever can read the log
 	// owns the instance, which is the only party who should.
@@ -73,6 +75,9 @@ func New(configuration config.Config) (*Server, error) {
 		router:    mux.NewRouter(),
 		started:   time.Now(),
 		migration: newMigrationRun(),
+	}
+	if configuration.OIDC.Issuer != "" {
+		server.oidc = auth.NewOIDC(configuration.OIDC)
 	}
 	if err := server.mintSetupToken(); err != nil {
 		return nil, err

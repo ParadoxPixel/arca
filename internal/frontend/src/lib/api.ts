@@ -128,6 +128,7 @@ export interface Bootstrap {
   logoUrl: string
   build: Build
   user: User | null
+  oidc: { name: string } | null
 }
 
 export interface InstanceSettings {
