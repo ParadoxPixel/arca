@@ -342,6 +342,10 @@ export interface ManagedUser {
   role: Role
   disabled: number
   created_at: number
+  // Linked to the identity provider.
+  sso: boolean
+  // The provider's admin groups set this account's role, so it cannot be changed here.
+  role_managed: boolean
 }
 
 export interface Grant {

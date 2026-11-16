@@ -76,10 +76,11 @@ The issuer is the application's **OpenID Configuration Issuer**, trailing slash 
 
 ## Things to know
 
-When admin groups are set, the provider owns the role. Every sign-in makes a member of an admin
-group an administrator and everyone else a user, so a role changed by hand under **Manage** is
-overwritten at that user's next sign-in. The one exception is the last enabled administrator, who
-is never demoted. With `OIDC_ADMIN_GROUPS` empty, Arca never touches a role.
+When admin groups are set, the provider owns the role of every account linked to it. Every sign-in
+makes a member of an admin group an administrator and everyone else a user, and the role of a linked
+account cannot be changed under **Manage**. The one exception is the last enabled administrator, who
+is never demoted. Accounts that never signed in through the provider keep a role set in Arca. With
+`OIDC_ADMIN_GROUPS` empty, Arca never touches a role.
 
 Removing someone at the provider only takes effect at their next sign-in. Sessions last 30 days and
 API tokens do not expire, so to offboard someone, disable their user in Arca as well.

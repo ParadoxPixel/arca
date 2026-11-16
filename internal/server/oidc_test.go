@@ -255,6 +255,49 @@ func TestOIDCMatchesReturningUserBySubject(t *testing.T) {
 	}
 }
 
+// With admin groups configured the provider sets the role of a linked account,
+// so it cannot be changed in Arca. Other edits and password accounts are not
+// affected.
+func TestOIDCAdminGroupsLockLinkedRole(t *testing.T) {
+	idp := newFakeIdP(t)
+	instance := newOIDCInstance(t, idp, func(settings *config.OIDC) { settings.AdminGroups = []string{"admins"} })
+	administrator := instance.signInAs(administratorEmail, administratorPassword)
+	idp.signIn(instance, person("sub-1", "ada@example.com"))
+	ada := instance.userByEmail("ada@example.com")
+
+	expectStatus(t, administrator.api(http.MethodPatch, "/api/users/"+ada.ID, `{"role": "admin"}`), http.StatusConflict)
+	expectStatus(t, administrator.api(http.MethodPatch, "/api/users/"+ada.ID, `{"disabled": true}`), http.StatusNoContent)
+
+	expectStatus(t, administrator.api(http.MethodPost, "/api/users",
+		`{"email": "bob@example.com", "name": "Bob", "password": "supersecret123"}`), http.StatusCreated)
+	bob := instance.userByEmail("bob@example.com")
+	expectStatus(t, administrator.api(http.MethodPatch, "/api/users/"+bob.ID, `{"role": "admin"}`), http.StatusNoContent)
+
+	listed := decode[struct{ Users []managedUser }](t, expectStatus(t, administrator.api(http.MethodGet, "/api/users", ""), http.StatusOK))
+	for _, user := range listed.Users {
+		if user.SSO != (user.ID == ada.ID) || user.RoleManaged != (user.ID == ada.ID) {
+			t.Fatalf("sso = %v, role_managed = %v for %s", user.SSO, user.RoleManaged, user.Email)
+		}
+	}
+}
+
+func TestOIDCWithoutAdminGroupsLeavesRoleEditable(t *testing.T) {
+	idp := newFakeIdP(t)
+	instance := newOIDCInstance(t, idp, nil)
+	administrator := instance.signInAs(administratorEmail, administratorPassword)
+	idp.signIn(instance, person("sub-1", "ada@example.com"))
+
+	ada := instance.userByEmail("ada@example.com")
+	expectStatus(t, administrator.api(http.MethodPatch, "/api/users/"+ada.ID, `{"role": "admin"}`), http.StatusNoContent)
+
+	listed := decode[struct{ Users []managedUser }](t, expectStatus(t, administrator.api(http.MethodGet, "/api/users", ""), http.StatusOK))
+	for _, user := range listed.Users {
+		if user.SSO != (user.ID == ada.ID) || user.RoleManaged {
+			t.Fatalf("sso = %v, role_managed = %v for %s", user.SSO, user.RoleManaged, user.Email)
+		}
+	}
+}
+
 func TestOIDCAdminGroupsPromoteAndDemote(t *testing.T) {
 	idp := newFakeIdP(t)
 	instance := newOIDCInstance(t, idp, func(settings *config.OIDC) { settings.AdminGroups = []string{"admins"} })
